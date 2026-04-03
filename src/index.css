@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #F8F7F5;
+    --color-bg-tertiary: #F1EFE8;
+
+    --color-text-primary: #1A1A19;
+    --color-text-secondary: #5F5E5A;
+    --color-text-tertiary: #888780;
+
+    --color-border-light: rgba(0, 0, 0, 0.08);
+    --color-border-default: rgba(0, 0, 0, 0.15);
+    --color-border-emphasis: rgba(0, 0, 0, 0.30);
+
+    --color-success-bg: #EAF3DE;
+    --color-success-text: #3B6D11;
+    --color-success-border: #97C459;
+
+    --color-warning-bg: #FAEEDA;
+    --color-warning-text: #854F0B;
+    --color-warning-border: #EF9F27;
+
+    --color-danger-bg: #FCEBEB;
+    --color-danger-text: #A32D2D;
+    --color-danger-border: #F09595;
+
+    --color-info-bg: #E6F1FB;
+    --color-info-text: #185FA5;
+    --color-info-border: #85B7EB;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg-primary: #1C1C1A;
+      --color-bg-secondary: #252523;
+      --color-bg-tertiary: #2C2C2A;
+
+      --color-text-primary: #E8E6DE;
+      --color-text-secondary: #B4B2A9;
+      --color-text-tertiary: #888780;
+
+      --color-border-light: rgba(255, 255, 255, 0.06);
+      --color-border-default: rgba(255, 255, 255, 0.12);
+      --color-border-emphasis: rgba(255, 255, 255, 0.25);
+
+      --color-success-bg: #1A2E0A;
+      --color-success-text: #C0DD97;
+      --color-success-border: #4A7A1A;
+
+      --color-warning-bg: #2E1E05;
+      --color-warning-text: #FAC775;
+      --color-warning-border: #8A5A10;
+
+      --color-danger-bg: #2E1010;
+      --color-danger-text: #F7C1C1;
+      --color-danger-border: #8A2E2E;
+
+      --color-info-bg: #0A1E30;
+      --color-info-text: #B5D4F4;
+      --color-info-border: #1A5080;
+    }
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: #f9f9f6;
+  color: #2e3430;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
+/* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+*, *::before, *::after {
+  transition-property: background-color, border-color, color, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
