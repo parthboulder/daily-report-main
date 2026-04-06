@@ -55,20 +55,35 @@ const sectionCard: React.CSSProperties = {
 
 export default function StepReview({ draft, goToStep, projects, superintendentName, stepNumber, totalSteps }: { draft: DSRDraft; goToStep: (s: number) => void; projects?: { id: number; name: string; code: string }[]; superintendentName?: string; stepNumber: number; totalSteps: number }) {
   const totalHeadcount = draft.manpower.reduce((s, m) => s + m.headcount, 0)
-  const insufficientTrades = draft.manpower.filter(m => !m.is_sufficient)
+
+  const aggregatedManpower = Object.values(draft.manpower.reduce((acc, m) => {
+    if (!m.trade || !m.trade.trim()) return acc
+    if (!acc[m.trade]) {
+      acc[m.trade] = { trade: m.trade, headcount: 0, is_sufficient: true, notes: '' }
+    }
+    acc[m.trade].headcount += m.headcount
+    if (!m.is_sufficient) {
+      acc[m.trade].is_sufficient = false
+      acc[m.trade].notes = [acc[m.trade].notes, m.notes].filter(Boolean).join('; ')
+    }
+    return acc
+  }, {} as Record<string, { trade: string; headcount: number; is_sufficient: boolean; notes: string }>))
+
+  const insufficientTrades = aggregatedManpower.filter(m => !m.is_sufficient)
   const issueCount = draft.has_issues ? draft.issues.length : 0
+  const delayCount = draft.has_delays ? draft.delays.length : 0
   const passedCount = draft.has_inspections ? draft.inspections.filter(i => i.result === 'PASS').length : 0
   const partialCount = draft.has_inspections ? draft.inspections.filter(i => i.result === 'PARTIAL').length : 0
   const failCount = draft.has_inspections ? draft.inspections.filter(i => i.result === 'FAIL').length : 0
 
-  const projectCode = draft.project_code || 'Unknown'
-  const currentProject = projects?.find(p => p.code === draft.project_code)
+  const projectName = draft.project_name || 'Unknown Project'
+  const currentProject = projects?.find(p => p.id === draft.project_id)
   const formattedDate = draft.date
     ? new Date(draft.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
 
   const handleDownloadPdf = () => {
-    const reportData = draftToReportData(draft, currentProject?.name || projectCode)
+    const reportData = draftToReportData(draft, currentProject?.name || 'Unknown Project')
     generateReportPdf(reportData)
   }
 
@@ -82,9 +97,10 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
-              <span style={{ background: C.primary, color: '#fff', padding: '4px 12px', borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: '0.1em' }}>{projectCode}</span>
+              <span style={{ background: C.primary, color: '#fff', padding: '4px 12px', borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: '0.1em' }}>#{draft.project_id}</span>
               <h1 className="text-xl md:text-2xl" style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, color: C.onSurface, margin: 0, letterSpacing: '-0.5px' }}>Daily Site Report</h1>
             </div>
+            <p style={{ fontSize: 13, color: C.onSurfaceVariant, margin: '2px 0 0', fontWeight: 500 }}>{projectName}</p>
             <p style={{ fontSize: 14, color: C.onSurfaceVariant, margin: '4px 0 0', fontWeight: 500 }}>{formattedDate}</p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
@@ -142,7 +158,7 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
                     </tr>
                   </thead>
                   <tbody>
-                    {draft.manpower.map((m, i) => (
+                    {aggregatedManpower.map((m, i) => (
                       <tr key={i} style={{ borderTop: `1px solid ${C.surfaceContainerHigh}` }}>
                         <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 500, color: C.onSurface }}>
                           {m.trade}
@@ -180,6 +196,23 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
               <p style={{ fontSize: 13, color: C.onSurfaceVariant, fontStyle: 'italic', margin: 0 }}>No trades logged</p>
             )}
           </section>
+
+          {delayCount > 0 && (
+            <section style={sectionCard}>
+              <SectionHeader icon="warning" title="Delays" onEdit={() => goToStep(5)} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {draft.delays.map((delay, index) => (
+                  <div key={index} style={{ background: C.surfaceContainerLow, borderRadius: 8, padding: 12 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.onSurface }}>{delay.activity || 'Unnamed delay'}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: C.onSurfaceVariant }}>Delay: {delay.delay_days} day{delay.delay_days === 1 ? '' : 's'}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12 }}>Reason: {delay.reason || 'N/A'}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12 }}>Responsibility: {delay.responsibility || 'N/A'}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12 }}>Mitigation: {delay.mitigation || 'N/A'}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Work Summary — dark panel */}
           <section style={sectionCard}>
@@ -249,6 +282,10 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
                 <div style={{ flex: 1, textAlign: 'center', padding: 16, background: C.surfaceContainerLow, borderRadius: 8 }}>
                   <p style={{ fontSize: 11, color: C.onSurfaceVariant, margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Issues</p>
                   <p style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Manrope, sans-serif', color: C.onSurface, margin: 0 }}>{issueCount}</p>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center', padding: 16, background: C.surfaceContainerLow, borderRadius: 8 }}>
+                  <p style={{ fontSize: 11, color: C.onSurfaceVariant, margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Delays</p>
+                  <p style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Manrope, sans-serif', color: C.onSurface, margin: 0 }}>{delayCount}</p>
                 </div>
                 {passedCount > 0 && (
                   <div style={{ flex: 1, textAlign: 'center', padding: 16, background: 'rgba(163,246,156,0.3)', borderRadius: 8 }}>
@@ -468,7 +505,7 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
       </div>
 
       {/* Warning for missing required fields */}
-      {(!draft.project_code || !draft.weather_conditions) && (
+      {(!draft.project_id || !draft.weather_conditions) && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 16px', borderRadius: 12,
@@ -476,7 +513,7 @@ export default function StepReview({ draft, goToStep, projects, superintendentNa
         }}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="#92400e"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" /></svg>
           <p style={{ fontSize: 13, color: '#92400e', margin: 0 }}>
-            {!draft.project_code ? 'Project not selected. ' : ''}{!draft.weather_conditions ? 'Weather not set. ' : ''}Go back to complete required fields.
+            {!draft.project_id ? 'Project not selected. ' : ''}{!draft.weather_conditions ? 'Weather not set. ' : ''}Go back to complete required fields.
           </p>
         </div>
       )}

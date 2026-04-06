@@ -269,13 +269,14 @@ export default function AdminDashboard() {
     setSavingProject(false)
   }
 
+  // Canonical project list with full hotel names and codes
   const CANONICAL_PROJECTS = [
-    { name: 'TownePlace Suites – Jackson', code: 'TPSJ' },
-    { name: 'Staybridge Suites – Jackson', code: 'SYBJ' },
-    { name: 'Candlewood Suites – Jackson', code: 'CWSJ' },
-    { name: 'Holiday Inn Express – Stephenville', code: 'HIS' },
-    { name: 'Hampton Inn – Baton Rouge', code: 'HIBR' },
-    { name: 'Homewood Suites – Gonzales', code: 'HWSG' },
+    { name: 'TownePlace Suites – Jackson', code: 'TPSJ' },           // TownePlace Suites Jackson
+    { name: 'Staybridge Suites – Jackson', code: 'SYBJ' },           // Staybridge Suites Jackson
+    { name: 'Candlewood Suites – Jackson', code: 'CWSJ' },           // Candlewood Suites Jackson
+    { name: 'Holiday Inn Express – Stephenville', code: 'HIS' },     // Holiday Inn Express Stephenville
+    { name: 'Hampton Inn – Baton Rouge', code: 'HIBR' },             // Hampton Inn Baton Rouge
+    { name: 'Homewood Suites – Gonzales', code: 'HWSG' },            // Homewood Suites Gonzales
   ]
 
   async function handleSyncProjects() {

@@ -72,7 +72,8 @@ interface NormalizedReport {
   workCompletedToday: string;
   workPlannedTomorrow: string;
   deliveries: string;
-  issuesDelays: string;
+  issues: string;
+  delays: string;
   inspections: string;
   notes: string;
   rfis: string;
@@ -172,6 +173,12 @@ function formatDateShort(dateStr: string): string {
   return `${parts[1]}/${parts[2]}/${parts[0].substring(2)}`;
 }
 
+function formatDateDDMMYYYY(dateStr: string): string {
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
   if (typeof val === "object") return JSON.stringify(val);
@@ -181,6 +188,57 @@ function safeStr(val: any): string {
 function hasContent(val: any): boolean {
   const s = safeStr(val).trim();
   return s.length > 0 && !["[]", "{}", "null", "undefined", "None", "N/A"].includes(s);
+}
+
+function parseEmailList(emailStr: string): string[] {
+  if (!emailStr || !emailStr.trim()) {
+    return [];
+  }
+
+  return emailStr
+    .split(/[,;\n]/)
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0);
+}
+
+function parseIssuesAndDelays(issuesDelaysText: string): { issues: string; delays: string } {
+  if (!issuesDelaysText || !issuesDelaysText.trim()) {
+    return { issues: "", delays: "" };
+  }
+
+  const blocks = issuesDelaysText.split(/\n\s*\n/).map(block => block.trim()).filter(Boolean);
+  const issuesBlocks: string[] = [];
+  const delaysBlocks: string[] = [];
+
+  for (const block of blocks) {
+    const firstLine = block.split('\n')[0] || '';
+    if (/^Delay\s*-\s*/i.test(firstLine)) {
+      delaysBlocks.push(block);
+    } else {
+      issuesBlocks.push(block);
+    }
+  }
+
+  return {
+    issues: issuesBlocks.join('\n\n'),
+    delays: delaysBlocks.join('\n\n'),
+  };
+}
+
+function normalizeEmailList(emails: string[]): string {
+  return emails.join(", ");
+}
+
+function filterEmailListByDomain(emails: string[], domain: string): string[] {
+  if (!domain || !domain.trim()) {
+    return emails;
+  }
+
+  const normalizedDomain = domain.trim().toLowerCase().replace(/^@/, "");
+  return emails.filter((email) => {
+    const e = email.trim().toLowerCase();
+    return e.endsWith("@" + normalizedDomain);
+  });
 }
 
 function toParagraph(val: any): string {
@@ -199,7 +257,8 @@ function buildHTML(report: NormalizedReport, polished: any): string {
     { key: "workPlannedTomorrow", label: "Work Planned Tomorrow" },
     { key: "deliveries", label: "Deliveries" },
     { key: "inspections", label: "Inspections" },
-    { key: "issuesDelays", label: "Issues & Delays" },
+    { key: "issues", label: "Issues" },
+    { key: "delays", label: "Delays" },
     { key: "rfis", label: "RFIs" },
     { key: "changeOrders", label: "Change Orders" },
     { key: "requestsNotices", label: "Requests & Notices" },
@@ -237,48 +296,193 @@ function buildHTML(report: NormalizedReport, polished: any): string {
 <head>
 <meta charset="utf-8">
 <style>
-  @page { size: letter; margin: 40px 52px 48px 52px; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page {
+    size: A4 landscape;
+    margin: 12mm 12mm 12mm 12mm;
+    @bottom-center { content: "Page " counter(page); }
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  html, body {
+    width: 100%;
+    height: 100%;
+  }
   body {
-    font-family: "Trebuchet MS", "Lucida Grande", Arial, sans-serif;
-    color: #2B3D4F;
-    font-size: 10pt;
-    line-height: 1.65;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1F2937;
+    font-size: 9.5pt;
+    line-height: 1.5;
     background: #fff;
   }
-  .page { max-width: 720px; margin: 0 auto; padding: 28px 0 20px 0; }
-  .hdr { margin-bottom: 32px; }
-  .brand { font-size: 10pt; font-weight: 800; color: #D4772C; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 6px; }
-  .title { font-size: 22pt; font-weight: 700; color: #2B3D4F; line-height: 1.15; margin-bottom: 4px; }
-  .project-date { font-size: 11pt; color: #D4772C; font-weight: 600; margin-bottom: 12px; }
-  .accent-bar { width: 40px; height: 3px; background: #D4772C; border-radius: 2px; }
-  .sec { margin-bottom: 22px; }
-  .label { font-size: 10pt; font-weight: 700; color: #D4772C; margin-bottom: 5px; }
-  p { font-size: 10pt; color: #445566; margin: 0 0 5px 0; line-height: 1.65; }
-  .summary { margin: 4px 0 26px 0; padding: 14px 18px; background: #FBF6F1; border-left: 3px solid #D4772C; border-radius: 0 6px 6px 0; }
-  .summary-tag { font-size: 8pt; font-weight: 700; color: #D4772C; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
-  .photo-page { padding-top: 20px; }
-  .pgrid { display: flex; flex-wrap: wrap; gap: 8px; }
-  .ph { width: calc(50% - 4px); margin-bottom: 4px; }
-  .ph img { width: 100%; height: 220px; object-fit: cover; border-radius: 4px; display: block; }
-  .ph span { display: block; font-size: 7pt; color: #B8BEC6; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .foot { margin-top: 32px; display: flex; justify-content: space-between; font-size: 7.5pt; color: #C8CCD2; }
+  .page {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-auto-flow: dense;
+  }
+  .hdr {
+    grid-column: 1;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #D4772C;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+  .hdr-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .brand {
+    font-size: 8pt;
+    font-weight: 900;
+    color: #D4772C;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .title {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #1F2937;
+    line-height: 1;
+  }
+  .hdr-info {
+    display: flex;
+    gap: 20px;
+    justify-self: end;
+    text-align: right;
+  }
+  .project-date {
+    font-size: 9pt;
+    color: #6B7280;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .accent-bar {
+    display: none;
+  }
+  .content-wrapper {
+    grid-column: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sec {
+    page-break-inside: avoid;
+  }
+  .label {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #D4772C;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  p {
+    font-size: 9.5pt;
+    color: #374151;
+    margin: 0;
+    line-height: 1.5;
+    text-align: left;
+  }
+  .summary {
+    grid-column: 1 / -1;
+    margin: 0 0 12px 0;
+    padding: 10px 12px;
+    background: #FEF3E2;
+    border-left: 3px solid #D4772C;
+    page-break-inside: avoid;
+  }
+  .summary-tag {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: #D4772C;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .photo-page {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+    page-break-inside: avoid;
+  }
+  .pgrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .ph {
+    page-break-inside: avoid;
+  }
+  .ph img {
+    width: 100%;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 2px;
+    display: block;
+    border: 1px solid #E5E7EB;
+  }
+  .ph span {
+    display: block;
+    font-size: 7pt;
+    color: #9CA3AF;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .foot {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #E5E7EB;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    color: #9CA3AF;
+    page-break-inside: avoid;
+  }
 </style>
 </head>
 <body>
 <div class="page">
   <div class="hdr">
-    <div class="brand">Boulder</div>
-    <div class="title">Daily Progress Report</div>
-    <div class="project-date">${report.projectName} | ${report.reportDate}</div>
-    <div class="accent-bar"></div>
+    <div class="hdr-left">
+      <div class="brand">Boulder</div>
+      <div class="title">Daily Report</div>
+    </div>
+    <div></div>
+    <div class="hdr-info">
+      <div>
+        <div class="project-date" style="font-weight: 700;">${report.projectName}</div>
+        <div class="project-date">${report.reportDate}</div>
+      </div>
+    </div>
   </div>
-  ${sections}
   ${summarySec}
+  <div class="content-wrapper">
+    <div class="col">
+      ${sections.split('<div class="sec">').slice(0, Math.ceil((sections.split('<div class="sec">').length - 1) / 2)).map(s => s ? '<div class="sec">' + s : '').join('')}
+    </div>
+    <div class="col">
+      ${sections.split('<div class="sec">').slice(Math.ceil((sections.split('<div class="sec">').length - 1) / 2)).map(s => s ? '<div class="sec">' + s : '').join('')}
+    </div>
+  </div>
   ${photoSec}
   <div class="foot">
-    <span>Boulder Construction</span>
-    <span>${report.projectName} &middot; ${report.reportDate}</span>
+    <span>© Boulder Construction</span>
+    <span>${report.projectName} • ${report.reportDate}</span>
   </div>
 </div>
 </body>
@@ -314,10 +518,21 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
     logger.log("Overriding emailCc from JSON list", { jsonCc })
   }
 
-  const finalEmailTo = Array.isArray(jsonTo) && jsonTo.length > 0 ? jsonTo.join(', ') : emailTo
-  const finalEmailCc = Array.isArray(jsonCc) && jsonCc.length > 0 ? jsonCc.join(', ') : emailCc
+  const toList = Array.isArray(jsonTo) && jsonTo.length > 0 ? jsonTo : parseEmailList(emailTo)
+  const ccList = Array.isArray(jsonCc) && jsonCc.length > 0 ? jsonCc : parseEmailList(emailCc)
 
-  logger.log("[WORKFLOW] Email recipients", { finalEmailTo, finalEmailCc })
+  // Optional domain restriction (default to ridgelabs.ai if configured or requested).
+  const allowedEmailDomain = (process.env.ALLOWED_EMAIL_DOMAIN || "ridgelabs.ai").trim().toLowerCase();
+
+  const filteredToList = filterEmailListByDomain(toList, allowedEmailDomain)
+  const filteredCcList = filterEmailListByDomain(ccList, allowedEmailDomain)
+
+  const finalEmailTo = normalizeEmailList(filteredToList)
+  const finalEmailCc = normalizeEmailList(filteredCcList)
+
+  logger.log("[WORKFLOW] Allowed email domain for recipients", { allowedEmailDomain })
+  logger.log("[WORKFLOW] Email recipients before filtering", { toList, ccList })
+  logger.log("[WORKFLOW] Email recipients after filtering", { finalEmailTo, finalEmailCc })
 
   // Step 1: Fetch records from Supabase
   const reportDate = getYesterdayDate();
@@ -342,15 +557,20 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
 
   // Step 2: Check for missing project reports
   const ACTIVE_PROJECTS = [
-    "Hampton Inn Baton Rouge",
-    "Candlewood Suites Jackson",
-    "Towneplace Suites Jackson",
-    "Staybridge Jackson",
-    "Homewood Gonzales",
-    "Holiday Inn Stephensville",
+    "Hampton Inn – Baton Rouge",
+    "Candlewood Suites – Jackson",
+    "TownePlace Suites – Jackson",
+    "Staybridge Suites – Jackson",
+    "Homewood Suites – Gonzales",
+    "Holiday Inn Express – Stephenville",
   ];
 
-  const submittedProjects = filtered.map(r => (r.projects && r.projects[0]) || "");
+  const submittedRecords = allRecords.filter(r => 
+    r.projects && 
+    r.projects.length > 0 && 
+    (r.report_status === 'Submitted' || r.report_status === 'Sent')
+  );
+  const submittedProjects = submittedRecords.map(r => (r.projects && r.projects[0]) || "");
 
   const missingProjects = ACTIVE_PROJECTS.filter(
     project => !submittedProjects.includes(project)
@@ -413,6 +633,16 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
     return { success: false, message: "No records found", recordsProcessed: 0 };
   }
 
+  // Project code to full name mapping for consistent display
+  const PROJECT_CODE_TO_NAME: Record<string, string> = {
+    "TPSJ": "TownePlace Suites – Jackson",
+    "SYBJ": "Staybridge Suites – Jackson",
+    "CWSJ": "Candlewood Suites – Jackson",
+    "HIS":  "Holiday Inn Express – Stephenville",
+    "HIBR": "Hampton Inn – Baton Rouge",
+    "HWSG": "Homewood Suites – Gonzales",
+  };
+
   // Step 3: Normalize records
   const normalizedRecords: NormalizedReport[] = filtered.map(r => {
     const dateStr = r.date ? r.date.substring(0, 10) : reportDate;
@@ -424,12 +654,13 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
       : [];
 
     const receiptsCount = Array.isArray(r.receipts) ? r.receipts.length : 0;
+    const { issues, delays } = parseIssuesAndDelays(r.issues_delays || "");
 
     return {
       recordId: r.id,
-      reportDate: formatDateLong(dateStr),
+      reportDate: formatDateDDMMYYYY(dateStr),
       reportDateShort: formatDateShort(dateStr),
-      projectName: r.projects ? r.projects.join(", ") : "",
+      projectName: r.projects ? r.projects.map(code => PROJECT_CODE_TO_NAME[code] || code).join(", ") : "",
       projectCode: r.projects ? r.projects[0] : "",
       weather: r.weather || "",
       manpower: r.manpower || "",
@@ -437,7 +668,8 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
       workCompletedToday: r.work_completed_today || "",
       workPlannedTomorrow: r.work_planned_tomorrow || "",
       deliveries: r.deliveries || "",
-      issuesDelays: r.issues_delays || "",
+      issues: issues,
+      delays: delays,
       inspections: r.inspection_today_upcoming_with_status || "",
       notes: r.notes || "",
       rfis: r.rfis || "",
@@ -457,7 +689,7 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
     const hasReportContent = [
       report.weather, report.manpower, report.workInProgress,
       report.workCompletedToday, report.workPlannedTomorrow,
-      report.deliveries, report.issuesDelays, report.inspections,
+      report.deliveries, report.issues, report.delays, report.inspections,
       report.notes, report.rfis, report.changeOrders, report.requestsNotices
     ].some(val => hasContent(val));
 
@@ -482,12 +714,12 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
    - Opens with the most significant work accomplished that day
    - Mentions key trades active on site and what they progressed
    - Notes any inspections, deliveries, or milestones
-   - Flags any delays or issues if present
+   - Notes if any delays or issues are present (without details, as they are covered in separate fields)
    - Closes with what's coming next or the overall project trajectory
    - Uses professional but approachable tone, past tense for completed work
 
 Return valid JSON with exactly these keys (corrected and humanized values):
-weather, manpower, workInProgress, workCompletedToday, workPlannedTomorrow, deliveries, issuesDelays, inspections, notes, rfis, changeOrders, requestsNotices, overallSummary
+weather, manpower, workInProgress, workCompletedToday, workPlannedTomorrow, deliveries, issues, delays, inspections, notes, rfis, changeOrders, requestsNotices, overallSummary
 
 Raw data:
 Weather: ${report.weather}
@@ -496,7 +728,8 @@ Work in Progress: ${report.workInProgress}
 Work Completed Today: ${report.workCompletedToday}
 Work Planned Tomorrow: ${report.workPlannedTomorrow}
 Deliveries: ${report.deliveries}
-Issues/Delays: ${report.issuesDelays}
+issues: ${report.issues}
+delays: ${report.delays}
 Inspections: ${report.inspections}
 Notes: ${report.notes}
 RFIs: ${report.rfis}
@@ -513,6 +746,8 @@ Output ONLY valid JSON, no markdown fences.`;
 
     const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
     const polished = JSON.parse(responseText.replace(/```json/g, "").replace(/```/g, "").trim());
+
+    logger.log("Polished data for report", { project: report.projectName, polished });
 
     // Step 5: Build HTML
     logger.log("Building HTML report...");
@@ -563,7 +798,7 @@ Output ONLY valid JSON, no markdown fences.`;
       throw tokenError;
     }
 
-    const emailSubject = `Daily Report - ${report.projectName} ${report.reportDateShort}`;
+    const emailSubject = `Daily Report - ${report.projectName} ${report.reportDate}`;
     const emailBody = `Hi Team,\n\nPlease find attached the Daily Progress Report for ${report.projectName}, dated ${report.reportDate}.\n\nThanks!\n\nSmit Patel\nBoulder Construction\nO: (214) 620-5512`;
 
     try {

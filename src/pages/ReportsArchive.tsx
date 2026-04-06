@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import { fetchDSRList, fetchProjects, type DSRRow, type FieldProject } from '../lib/fieldOps'
-import { PROJECT_COLORS, DEFAULT_PROJECT_COLOR } from '../lib/projectColors'
+import { DEFAULT_PROJECT_COLOR } from '../lib/projectColors'
 import { useAuth, filterByAccess } from '../lib/AuthContext'
 
 const C = {
@@ -36,7 +36,8 @@ export default function ReportsArchive() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await fetchDSRList({ projectCode: projectFilter || undefined, limit: 200 })
+    const projectId = projectFilter ? parseInt(projectFilter, 10) : undefined
+    const data = await fetchDSRList({ projectId, limit: 200 })
     setReports(filterByAccess(data, profile))
     setLoading(false)
   }, [projectFilter, profile])
@@ -44,9 +45,11 @@ export default function ReportsArchive() {
   useEffect(() => { load() }, [load])
 
   const filteredReports = reports.filter((r) => {
-    const matchesProject = !projectFilter || r.projects?.includes(projectFilter)
+    const proj = projectFilter ? parseInt(projectFilter, 10) : null
+    const matchesProject = !proj || r.project_id === proj
+    const projName = projectFilter ? projects.find(p => p.code === projectFilter)?.name || '' : ''
     const matchesSearch = !search ||
-      r.projects?.join('').toLowerCase().includes(search.toLowerCase()) ||
+      projName.toLowerCase().includes(search.toLowerCase()) ||
       (r.work_completed_today || '').toLowerCase().includes(search.toLowerCase())
     return matchesProject && matchesSearch
   })
@@ -139,11 +142,11 @@ export default function ReportsArchive() {
                     </td>
                   </tr>
                 ) : filteredReports.map((r, idx) => {
-                  const code = r.projects?.[0] || null
-                  const colors = code ? (PROJECT_COLORS[code] || DEFAULT_PROJECT_COLOR) : DEFAULT_PROJECT_COLOR
+                  const pid = r.project_id || 0
+                  const colors = DEFAULT_PROJECT_COLOR
                   const isSubmitted = ['Submitted', 'Sent'].includes(r.report_status || '')
                   const date = r.date ? new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
-                  const proj = code ? projects.find((p) => p.code === code) : null
+                  const proj = pid ? projects.find((p) => p.id === pid) : null
                   return (
                     <tr
                       key={r.id}
@@ -155,8 +158,8 @@ export default function ReportsArchive() {
                       <td style={{ padding: '18px 32px', fontSize: 13, fontFamily: 'monospace', color: C.onSurfaceVariant }}>#{r.id}</td>
                       <td style={{ padding: '18px 32px' }}>
                         <div className="flex items-center gap-2">
-                          <span style={{ padding: '2px 8px', background: colors.bg, color: colors.text, fontSize: 10, fontWeight: 700, borderRadius: 4 }}>{code || '—'}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.onSurface }}>{proj?.name || code || '—'}</span>
+                          <span style={{ padding: '4px 10px', background: colors.bg, color: colors.text, fontSize: 11, fontWeight: 700, borderRadius: 4 }}>#{pid}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.onSurface }}>{proj?.name || 'Unknown'}</span>
                         </div>
                       </td>
                       <td style={{ padding: '18px 32px', fontSize: 13, color: C.onSurfaceVariant }}>{date}</td>

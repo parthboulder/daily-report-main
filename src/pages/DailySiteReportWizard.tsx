@@ -5,7 +5,7 @@ import {
   Check, WifiOff, Loader2,
 } from 'lucide-react'
 import {
-  type DSRDraft, type PhotoDraft,
+  type DSRDraft, type DelayDraft, type PhotoDraft,
   emptyDraft, saveDraft, loadDraft, clearDraft,
   fetchProjects, fetchActiveTradesForProject,
   submitDSR, enqueueOfflineSubmission, processOfflineQueue,
@@ -18,10 +18,11 @@ import StepManpower from './wizard-steps/StepManpower'
 import StepWorkSummary from './wizard-steps/StepWorkSummary'
 import StepDeliveries from './wizard-steps/StepDeliveries'
 import StepIssues from './wizard-steps/StepIssues'
+import StepDelays from './wizard-steps/StepDelays'
 import StepPhotos from './wizard-steps/StepPhotos'
 import StepReview from './wizard-steps/StepReview'
 
-const STEPS = ['Weather', 'Manpower', 'Summary', 'Deliveries', 'Issues', 'Photos', 'Submit']
+const STEPS = ['Weather', 'Manpower', 'Summary', 'Deliveries', 'Issues', 'Delays', 'Photos', 'Submit']
 const TODAY = new Date().toISOString().split('T')[0]
 
 const STEP_ICONS: Record<string, React.ReactNode> = {
@@ -50,6 +51,11 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
       <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
     </svg>
   ),
+  Delays: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+      <path d="M13 3a9 9 0 100 18 9 9 0 000-18zm0 16a7 7 0 110-14 7 7 0 010 14zm-.5-10h1v5l4.3 2.6-.6.8L12.5 14V9z" />
+    </svg>
+  ),
   Photos: (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
       <path d="M12 12.5c-1.24 0-2.25 1.01-2.25 2.25S10.76 17 12 17s2.25-1.01 2.25-2.25S13.24 12.5 12 12.5zm0-8.5L9.74 6.5H5c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8.5c0-1.1-.9-2-2-2h-4.74L12 4zm0 13c-1.93 0-3.5-1.57-3.5-3.5S10.07 10 12 10s3.5 1.57 3.5 3.5S13.93 17 12 17zm-6.5-9h-2v-2h2v2z"/>
@@ -67,8 +73,9 @@ const NEXT_STEP_LABELS: Record<number, string> = {
   1: 'Continue to Summary',
   2: 'Continue to Deliveries',
   3: 'Continue to Issues',
-  4: 'Continue to Photos',
-  5: 'Continue to Submit',
+  4: 'Continue to Delays',
+  5: 'Continue to Photos',
+  6: 'Continue to Submit',
 }
 
 export default function DailySiteReportWizard() {
@@ -118,13 +125,13 @@ export default function DailySiteReportWizard() {
   useEffect(() => { fetchProjects().then(all => setProjects(filterByAccess(all, profile))) }, [profile])
 
   useEffect(() => {
-    if (!draft.project_code) return
+    if (!draft.project_name) return
     setLoadingTrades(true)
-    fetchActiveTradesForProject(draft.project_code).then((trades) => {
+    fetchActiveTradesForProject(draft.project_name).then((trades) => {
       setAvailableTrades([...new Set([...trades, ...DEFAULT_TRADES])])
       setLoadingTrades(false)
     })
-  }, [draft.project_code])
+  }, [draft.project_name])
 
   const updateDraft = useCallback((updates: Partial<DSRDraft>) => {
     setDraft((prev) => {
@@ -170,16 +177,30 @@ export default function DailySiteReportWizard() {
     if (result.success) clearDraft()
   }
 
+  const isDelayEntryValid = (delay: DelayDraft) => {
+    return (
+      delay.activity?.trim().length > 0 &&
+      delay.delay_days >= 0 &&
+      delay.reason?.trim().length > 0 &&
+      delay.responsibility?.trim().length > 0 &&
+      delay.mitigation?.trim().length > 0
+    )
+  }
+
   const canProceed = (): boolean => {
     switch (draft.step) {
-      case 0: return !!draft.project_code && !!draft.weather_conditions
+      case 0: return !!draft.project_id && !!draft.weather_conditions
       case 1: return draft.manpower.length > 0
       case 2: return draft.work_completed.trim().length > 0
+      case 5:
+        if (!draft.has_delays) return true
+        if (draft.delays.length === 0) return false
+        return draft.delays.every(isDelayEntryValid)
       default: return true
     }
   }
 
-  const currentProject = projects.find(p => p.code === draft.project_code)
+  const currentProject = projects.find(p => p.id === draft.project_id)
 
   if (submitResult && !submitResult.success) {
     return (
@@ -206,7 +227,7 @@ export default function DailySiteReportWizard() {
         </div>
         <h2 style={{ fontSize: 22, fontFamily: 'Manrope, sans-serif', fontWeight: 800, color: C.onSurface, marginBottom: 8 }}>Report Submitted</h2>
         <p style={{ fontSize: 15, color: C.onSurfaceVariant, marginBottom: 4 }}>
-          {draft.project_code} — {new Date(draft.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          {draft.project_name} — {new Date(draft.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
         {!isOnline && <p style={{ fontSize: 13, marginTop: 8, padding: '8px 16px', borderRadius: 8, background: '#fef9c3', color: '#854d0e' }}>Saved offline — will sync when connected</p>}
         {isOnline && submitResult.reportId && <p style={{ fontSize: 13, marginTop: 8, color: C.onSurfaceVariant }}>Report #{submitResult.reportId}</p>}
@@ -316,8 +337,9 @@ export default function DailySiteReportWizard() {
         {draft.step === 2 && <StepWorkSummary draft={draft} update={updateDraft} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
         {draft.step === 3 && <StepDeliveries draft={draft} update={updateDraft} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
         {draft.step === 4 && <StepIssues draft={draft} update={updateDraft} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
-        {draft.step === 5 && <StepPhotos draft={draft} photoInputRef={photoInputRef} onCapture={handlePhotoCapture} onRemove={(id) => updateDraft({ photos: draft.photos.filter((p) => p.id !== id) })} onCaption={(id, caption) => updateDraft({ photos: draft.photos.map((p) => (p.id === id ? { ...p, caption } : p)) })} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
-        {draft.step === 6 && <StepReview draft={draft} goToStep={goToStep} projects={projects} superintendentName={profile?.full_name} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
+        {draft.step === 5 && <StepDelays draft={draft} update={updateDraft} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
+        {draft.step === 6 && <StepPhotos draft={draft} photoInputRef={photoInputRef} onCapture={handlePhotoCapture} onRemove={(id) => updateDraft({ photos: draft.photos.filter((p) => p.id !== id) })} onCaption={(id, caption) => updateDraft({ photos: draft.photos.map((p) => (p.id === id ? { ...p, caption } : p)) })} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
+        {draft.step === 7 && <StepReview draft={draft} goToStep={goToStep} projects={projects} superintendentName={profile?.full_name} stepNumber={draft.step + 1} totalSteps={STEPS.length} />}
       </main>
 
       {/* ===== Fixed Bottom Action Bar ===== */}

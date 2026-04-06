@@ -68,11 +68,11 @@ export default function FieldOpsDashboard() {
 
   // Filter projects by user access
   const projects = filterByAccess(allProjects, profile)
-  const projectCodes = projects.map((p) => p.code)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await fetchDSRList({ projectCode: projectFilter || undefined, limit: 200 })
+    const projectId = projectFilter ? parseInt(projectFilter, 10) : undefined
+    const data = await fetchDSRList({ projectId, limit: 200 })
     // Filter reports by user's allowed projects
     const filtered = filterByAccess(data, profile)
     setReports(filtered)
@@ -81,17 +81,18 @@ export default function FieldOpsDashboard() {
 
   useEffect(() => { load() }, [load])
 
-  const todayReports: Record<string, DSRRow | undefined> = {}
-  for (const code of projectCodes) {
-    todayReports[code] = reports.find((r) => r.date === TODAY && r.projects?.includes(code))
+  const projectIds = projects.map((p) => p.id)
+  const todayReports: Record<number, DSRRow | undefined> = {}
+  for (const id of projectIds) {
+    todayReports[id] = reports.find((r) => r.date === TODAY && r.project_id === id)
   }
 
   const submittedToday = Object.values(todayReports).filter(Boolean).length
-  const totalProjects = projectCodes.length
+  const totalProjects = projectIds.length
 
   const weeklyData = last7Days.map((date) => {
-    const submitted = projectCodes.filter((code) =>
-      reports.some((r) => r.date === date && r.projects?.includes(code))
+    const submitted = projectIds.filter((id) =>
+      reports.some((r) => r.date === date && r.project_id === id)
     ).length
     return { date, submitted, pct: totalProjects > 0 ? Math.round((submitted / totalProjects) * 100) : 0 }
   })
@@ -100,7 +101,7 @@ export default function FieldOpsDashboard() {
     ? Math.round(weeklyData.reduce((s, d) => s + d.pct, 0) / weeklyData.length)
     : 0
 
-  const pendingProjects = projectCodes.filter((code) => !todayReports[code])
+  const pendingProjects = projectIds.filter((id) => !todayReports[id])
 
   return (
     <div style={{ background: C.surface, minHeight: '100vh', color: C.onSurface, fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -143,12 +144,12 @@ export default function FieldOpsDashboard() {
             </button>
             {projects.map((proj) => {
               const colors = PROJECT_COLORS[proj.code] || DEFAULT_PROJECT_COLOR
-              const active = projectFilter === proj.code
-              const submitted = !!todayReports[proj.code]
+              const active = projectFilter === String(proj.id)
+              const submitted = !!todayReports[proj.id]
               return (
                 <button
-                  key={proj.code}
-                  onClick={() => { setProjectFilter(active ? null : proj.code); setSidebarOpen(false) }}
+                  key={proj.id}
+                  onClick={() => { setProjectFilter(active ? null : String(proj.id)); setSidebarOpen(false) }}
                   style={{
                     width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12,
                     padding: '12px 24px', border: 'none', cursor: 'pointer',
@@ -270,12 +271,12 @@ export default function FieldOpsDashboard() {
                 <span style={{ fontSize: 13, color: C.onSurfaceVariant, fontWeight: 500 }}>{pendingProjects.length} active tasks</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {pendingProjects.map((code) => {
-                  const proj = projects.find((p) => p.code === code)
-                  const colors = PROJECT_COLORS[code] || DEFAULT_PROJECT_COLOR
+                {pendingProjects.map((id) => {
+                  const proj = projects.find((p) => p.id === id)
+                  const colors = proj ? (PROJECT_COLORS[proj.code] || DEFAULT_PROJECT_COLOR) : DEFAULT_PROJECT_COLOR
                   return (
                     <div
-                      key={code}
+                      key={id}
                       onClick={() => navigate('/daily-reports/new')}
                       style={{ background: C.surfaceContainerLowest, borderRadius: 12, padding: 20, cursor: 'pointer', border: `1px solid ${C.outlineVariant}30`, transition: 'all 150ms', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
                       onMouseEnter={e => { e.currentTarget.style.background = C.surfaceContainerLow; e.currentTarget.style.borderColor = `${C.primary}30` }}
@@ -289,8 +290,8 @@ export default function FieldOpsDashboard() {
                           Not submitted
                         </span>
                       </div>
-                      <h4 style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 15, color: C.onSurface, margin: '0 0 4px' }}>{code}</h4>
-                      <p style={{ fontSize: 13, color: C.onSurfaceVariant, margin: '0 0 16px' }}>{proj?.superintendent || ''}{proj?.superintendent && proj?.name ? ' · ' : ''}{proj?.name || code}</p>
+                      <h4 style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 15, color: C.onSurface, margin: '0 0 8px' }}>{proj?.name || 'Project'}</h4>
+                      <p style={{ fontSize: 13, color: C.onSurfaceVariant, margin: '0 0 16px' }}>{proj?.superintendent || 'No superintendent assigned'}</p>
                       <div className="flex items-center justify-between" style={{ fontSize: 12, fontWeight: 500, color: C.onSurfaceVariant }}>
                         <span className="flex items-center gap-1">
                           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 6v6l4 2"/></svg>

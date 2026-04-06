@@ -1,7 +1,7 @@
 // ===== Daily Site Report View — SiteIntelligence Design =====
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { fetchDSRById, fetchManpower, type DSRRow, type ManpowerRow } from '../lib/fieldOps'
+import { fetchDSRById, fetchManpowerForDate, fetchDelaysForDate, type DSRRow, type ManpowerRow, type DelayRow } from '../lib/fieldOps'
 import { generateReportPdf } from '../lib/generateReportPdf'
 import { supabase } from '../lib/supabase'
 
@@ -16,7 +16,7 @@ const ICONS = {
   groups: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
   assignment: 'M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z',
   localShipping: 'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z',
-  warning: 'M1 21h22L   2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+  warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
   description: 'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
   sunny: 'M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z',
   air: 'M14.5 17c0 1.65-1.35 3-3 3s-3-1.35-3-3h2c0 .55.45 1 1 1s1-.45 1-1-.45-1-1-1H2v-2h9.5c1.65 0 3 1.35 3 3zM19 6.5C19 4.57 17.43 3 15.5 3S12 4.57 12 6.5h2c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S16.33 8 15.5 8H2v2h13.5c1.93 0 3.5-1.57 3.5-3.5zM18.5 11H2v2h16.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5H15c0 1.93 1.57 3.5 3.5 3.5S22 16.43 22 14.5 20.43 11 18.5 11z',
@@ -48,6 +48,7 @@ export default function DailySiteReportView() {
   const navigate = useNavigate()
   const [report, setReport] = useState<DSRRow | null>(null)
   const [manpower, setManpower] = useState<ManpowerRow[]>([])
+  const [delays, setDelays] = useState<DelayRow[]>([])
   const [loading, setLoading] = useState(true)
   const [superintendentName, setSuperintendentName] = useState('')
   const generatingPdf = false
@@ -56,9 +57,12 @@ export default function DailySiteReportView() {
     if (!id) return
     fetchDSRById(parseInt(id)).then((r) => {
       setReport(r)
-      if (r?.projects?.[0]) {
-        fetchManpower({ projectCode: r.projects[0], days: 1 }).then((rows) => {
-          setManpower(rows.filter((row) => row.date === r.date))
+      if (r?.project_id) {
+        fetchManpowerForDate(r.date || '', r.project_id, r.id).then((rows) => {
+          setManpower(rows)
+        })
+        fetchDelaysForDate(r.date || '', r.project_id).then((rows) => {
+          setDelays(rows)
         })
       }
       // Fetch superintendent name from user_profiles
@@ -72,35 +76,117 @@ export default function DailySiteReportView() {
     })
   }, [id])
 
+  const manpowerData = useMemo(() => {
+    const manpowerMap = manpower.reduce((acc, m) => {
+      const trade = (m.name || '—').trim()
+      if (!acc[trade]) {
+        acc[trade] = { headcount: 0, sufficient: true, notes: [] }
+      }
+      acc[trade].headcount += m.people || 0
+      acc[trade].sufficient = acc[trade].sufficient && (m.sufficient_amt_of_manpower !== 'No')
+      if (m.notes) acc[trade].notes.push(m.notes)
+      return acc
+    }, {} as Record<string, { headcount: number; sufficient: boolean; notes: string[] }>)
+    return Object.entries(manpowerMap).map(([trade, data]) => ({
+      trade,
+      headcount: data.headcount,
+      is_sufficient: data.sufficient,
+      notes: data.notes.join('; '),
+    }))
+  }, [manpower])
+
+  const totalPersonnel = useMemo(() => manpowerData.reduce((sum, m) => sum + m.headcount, 0), [manpowerData])
+
   const handleDownloadPdf = () => {
     if (!report) return
-    const pCode = report.projects?.[0] || 'Unknown'
 
-    // Build manpower data from fetched rows
-    const manpowerData = manpower.map(m => ({
-      trade: m.name || '—',
-      headcount: m.people || 0,
-      is_sufficient: m.sufficient_amt_of_manpower !== 'No',
-      notes: m.notes || '',
-    }))
+    const totalManpower = manpowerData.reduce((sum, m) => sum + m.headcount, 0)
 
     // Parse deliveries text into lines
     const deliveryLines = report.deliveries
       ? report.deliveries.split('\n').filter(l => l.trim())
       : []
 
-    // Parse issues text into lines
-    const issueLines = report.issues_delays
-      ? report.issues_delays.split('\n').filter(l => l.trim()).map(l => ({
-          category: 'Issue', description: l, schedule_impact: false, schedule_impact_days: 0,
-        }))
+    // Parse issues and delays text into structured lines
+    const parsedBlocks = report.issues_delays
+      ? report.issues_delays
+        .split(/\n\s*\n/) // separated blocks
+        .map(block => block.trim())
+        .filter(Boolean)
       : []
+
+    const issueLines = parsedBlocks
+      .filter(block => {
+        const firstLine = block.split('\n')[0] || ''
+        return !/^Delay\s*-\s*/i.test(firstLine)
+      })
+      .map((block) => {
+        const firstLine = block.split('\n')[0] || ''
+        if (/^\[.*\]/.test(firstLine)) {
+          return { category: 'Issue', description: block, schedule_impact: false, schedule_impact_days: 0 }
+        }
+        return { category: 'Issue', description: block, schedule_impact: false, schedule_impact_days: 0 }
+      })
+
+    // Extract delays from issues_delays text
+    const textDelays = parsedBlocks
+      .filter(block => {
+        const firstLine = block.split('\n')[0] || ''
+        return /^Delay\s*-\s*/i.test(firstLine)
+      })
+      .map(block => {
+        const lines = block.split('\n').map(line => line.trim()).filter(Boolean)
+        const firstLine = lines[0] || ''
+        const activity = firstLine.replace(/^Delay\s*-\s*/i, '').trim()
+
+        // Parse structured fields from the remaining lines
+        let delay_days = 0
+        let reason = ''
+        let responsibility = ''
+        let mitigation = ''
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i]
+          if (line.toLowerCase().startsWith('duration:')) {
+            const durationMatch = line.match(/duration:\s*(\d+)/i)
+            if (durationMatch) {
+              delay_days = parseInt(durationMatch[1], 10) || 0
+            }
+          } else if (line.toLowerCase().startsWith('reason:')) {
+            reason = line.replace(/^reason:\s*/i, '').trim()
+          } else if (line.toLowerCase().startsWith('responsibility:')) {
+            responsibility = line.replace(/^responsibility:\s*/i, '').trim()
+          } else if (line.toLowerCase().startsWith('mitigation:')) {
+            mitigation = line.replace(/^mitigation:\s*/i, '').trim()
+          }
+        }
+
+        return {
+          activity,
+          delay_days,
+          reason: reason || 'Not specified',
+          responsibility,
+          mitigation
+        }
+      })
+
+    // Parse delays
+    const dbDelays = delays.map(d => ({
+      activity: d.delay || '',
+      delay_days: d.days_impacted || 0,
+      reason: d.cause_category || '',
+      responsibility: (d.trade || []).join(', ') || '',
+      mitigation: '', // Not stored in DB
+    }))
+
+    // Combine delays from database and text
+    const delayLines = [...dbDelays, ...textDelays]
 
     // Parse inspections text
     const inspectionLines = report.inspection_today_upcoming_with_status
       ? report.inspection_today_upcoming_with_status.split('\n').filter(l => l.trim()).map(l => ({
-          type: l, result: '', notes: '',
-        }))
+        type: l, result: '', notes: '',
+      }))
       : []
 
     // Build photo list
@@ -109,16 +195,18 @@ export default function DailySiteReportView() {
       : []
 
     generateReportPdf({
-      projectName: pCode,
-      projectCode: pCode,
+      projectName: 'Project #' + report.project_id,
+      projectCode: 'Project #' + report.project_id,
       date: report.date || '',
       weather: report.weather || undefined,
       manpower: manpowerData,
+      totalManpower,
       work_completed: report.work_completed_today || '',
       work_in_progress: report.work_in_progress || '',
       work_planned_tomorrow: report.work_planned_tomorrow || '',
       deliveries: deliveryLines,
       issues: issueLines,
+      delays: delayLines,
       inspections: inspectionLines,
       notes: report.notes || '',
       photos: photoList,
@@ -145,7 +233,7 @@ export default function DailySiteReportView() {
     )
   }
 
-  const projectCode = report.projects?.[0] || '—'
+  const projectId = report.project_id || 0
   const formattedDate = report.date
     ? new Date(report.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
@@ -153,7 +241,6 @@ export default function DailySiteReportView() {
     ? new Date(report.report_sent_at).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null
 
-  const totalHeadcount = manpower.reduce((s, m) => s + (m.people || 0), 0)
   const photos: { url: string; filename?: string; caption?: string }[] =
     Array.isArray(report.photos) ? report.photos : []
 
@@ -210,10 +297,10 @@ export default function DailySiteReportView() {
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ background: T.primary, color: '#fff', padding: '4px 12px', borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em' }}>{projectCode}</span>
+                <span style={{ background: T.primary, color: '#fff', padding: '4px 12px', borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em' }}>#{projectId}</span>
                 <h1 className="text-xl md:text-[28px]" style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, color: T.onSurface, margin: 0, letterSpacing: '-0.5px' }}>Daily Site Report</h1>
               </div>
-              <p style={{ fontSize: 14, color: T.onSurfaceVar, margin: '6px 0 0', fontWeight: 500 }}>{formattedDate}</p>
+              <p style={{ fontSize: 14, color: T.onSurfaceVar, margin: '4px 0 0', fontWeight: 500 }}>{formattedDate}</p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
               <div style={{
@@ -259,15 +346,15 @@ export default function DailySiteReportView() {
                       </tr>
                     </thead>
                     <tbody>
-                      {manpower.map((m) => {
-                        const ok = m.sufficient_amt_of_manpower !== 'No'
+                      {manpowerData.map((m, idx) => {
+                        const ok = m.is_sufficient
                         return (
-                          <tr key={m.id} style={{ borderTop: `1px solid ${T.surfaceHigh}` }}>
+                          <tr key={idx} style={{ borderTop: `1px solid ${T.surfaceHigh}` }}>
                             <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 500, color: T.onSurface }}>
-                              {m.name}
+                              {m.trade}
                               {!ok && m.notes && <p style={{ fontSize: 11, color: '#92400e', margin: '2px 0 0' }}>{m.notes}</p>}
                             </td>
-                            <td style={{ textAlign: 'center', padding: '14px 16px', fontSize: 14, fontWeight: 600, color: T.onSurface }}>{String(m.people || 0).padStart(2, '0')}</td>
+                            <td style={{ textAlign: 'center', padding: '14px 16px', fontSize: 14, fontWeight: 600, color: T.onSurface }}>{String(m.headcount).padStart(2, '0')}</td>
                             <td style={{ textAlign: 'center', padding: '14px 16px' }}>
                               {ok ? (
                                 <span style={{ color: T.primary, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
@@ -282,18 +369,27 @@ export default function DailySiteReportView() {
                           </tr>
                         )
                       })}
-                    </tbody>
-                    <tfoot>
-                      <tr style={{ background: `${T.surfaceHigh}50` }}>
-                        <td style={{ padding: '10px 16px', fontSize: 14, fontWeight: 700, color: T.onSurface }}>Total Personnel</td>
-                        <td style={{ textAlign: 'center', padding: '10px 16px', fontSize: 14, fontWeight: 700, color: T.onSurface }}>{totalHeadcount}</td>
-                        <td />
+                      <tr style={{ borderTop: `2px solid ${T.surfaceHigh}`, background: T.surfaceDim }}>
+                        <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 700, color: T.onSurface }}>Total Personnel</td>
+                        <td style={{ textAlign: 'center', padding: '14px 16px', fontSize: 14, fontWeight: 700, color: T.onSurface }}>{String(totalPersonnel).padStart(2, '0')}</td>
+                        <td style={{ textAlign: 'center', padding: '14px 16px' }}></td>
                       </tr>
-                    </tfoot>
+                    </tbody>
                   </table>
                 </div>
               ) : report.manpower ? (
-                <p style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', color: T.onSurface, margin: 0 }}>{report.manpower}</p>
+                <div>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', color: T.onSurface, margin: '0 0 16px' }}>{report.manpower}</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: T.onSurface, margin: 0 }}>
+                    Total Personnel: {manpowerData.length > 0 ? totalPersonnel : (
+                      // Parse from text if needed
+                      report.manpower.split('\n').reduce((sum: number, line: string) => {
+                        const match = line.match(/:\s*(\d+)/)
+                        return sum + (match ? parseInt(match[1], 10) : 0)
+                      }, 0)
+                    )}
+                  </p>
+                </div>
               ) : (
                 <p style={{ fontSize: 13, color: T.onSurfaceVar, fontStyle: 'italic', margin: 0 }}>No manpower data</p>
               )}
@@ -353,8 +449,21 @@ export default function DailySiteReportView() {
                   <MIcon d={ICONS.warning} fill="#d97706" />
                   Issues & Delays
                 </h2>
-                <div style={{ background: '#fef9c3', padding: 16, borderRadius: 8, border: '1px solid #fde68a' }}>
-                  <p style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', color: '#92400e', margin: 0 }}>{report.issues_delays}</p>
+                <div style={{ background: '#fef9c3', padding: 16, borderRadius: 8, border: '1px solid #fde68a', display: 'grid', gap: 12 }}>
+                  {report.issues_delays.split(/\n\s*\n/).map((block, index) => {
+                    const trimmed = block.trim()
+                    if (!trimmed) return null
+                    const lines = trimmed.split('\n')
+                    const type = /^Delay\s*-\s*/i.test(lines[0]) ? 'Delay' : /^\[.*\]/.test(lines[0]) ? 'Issue' : 'Issue'
+                    return (
+                      <div key={index} style={{ borderLeft: `4px solid ${type === 'Delay' ? '#9e421f' : '#b21b21'}`, paddingLeft: 10 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: type === 'Delay' ? '#9e421f' : '#92400e', margin: '0 0 4px' }}>{type}</p>
+                        {lines.map((line, lineIdx) => (
+                          <p key={lineIdx} style={{ fontSize: 13, lineHeight: 1.6, margin: lineIdx === 0 ? 0 : '2px 0 0', whiteSpace: 'pre-wrap', color: '#5f4636' }}>{line}</p>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </section>
             )}

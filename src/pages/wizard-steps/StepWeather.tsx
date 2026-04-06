@@ -3,6 +3,8 @@ import { C, FieldLabel, Toggle, StepHeader } from './shared'
 
 const CLOUD_PATH = "M501.675,311.617c0-62.804-46.1-114.845-106.307-124.133c-16.384-64.772-75.051-112.711-144.913-112.711c-70.714,0-129.958,49.114-145.493,115.088c-54.393,13.796-94.638,63.076-94.638,121.757c0,69.37,56.24,125.611,125.61,125.611h241.689v-0.021C446.275,436.373,501.675,380.465,501.675,311.617z"
 
+
+
 const WEATHER_OPTIONS: { value: WeatherCondition; label: string; icon: React.ReactNode }[] = [
   {
     value: 'Clear', label: 'Clear',
@@ -84,31 +86,39 @@ export default function StepWeather({ draft, update, projects, stepNumber, total
   return (
     <div className="px-4 md:px-8 lg:px-12" style={{ maxWidth: 1080, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
       <StepHeader title="Weather & Basics" description="Record site conditions, temperature, and schedule impact." stepNumber={stepNumber} totalSteps={totalSteps} />
-
+      
+      
       {/* Project + Date */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 p-4 md:p-8" style={{ background: C.surfaceContainerLowest, borderRadius: 12, border: `1px solid ${C.surfaceContainerHigh}` }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <FieldLabel>Active Project</FieldLabel>
           <div style={{ position: 'relative' }}>
             <select
-              value={draft.project_code}
-              onChange={(e) => update({ project_code: e.target.value, manpower: [] })}
+              value={draft.project_id}
+              onChange={(e) => {
+                const pid = parseInt(e.target.value, 10)
+                const proj = projects.find(p => p.id === pid)
+                update({ project_id: pid, project_name: proj?.name || '', manpower: [] })
+              }}
               style={{ width: '100%', background: C.surfaceContainerLowest, border: `1px solid ${C.outlineVariant}`, padding: '14px 40px 14px 16px', borderRadius: 8, fontSize: 14, color: C.onSurface, fontWeight: 500, appearance: 'none', outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}
             >
               <option value="">Select project...</option>
-              {projects.map((p) => <option key={p.code} value={p.code}>{p.code} - {p.name}</option>)}
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <svg viewBox="0 0 24 24" width="18" height="18" fill={C.onSurfaceVariant} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><path d="M7 10l5 5 5-5z"/></svg>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <FieldLabel>Reporting Date</FieldLabel>
-          <input
-            type="date"
-            value={draft.date}
-            onChange={(e) => update({ date: e.target.value })}
-            style={{ width: '100%', background: C.surfaceContainerLowest, border: `1px solid ${C.outlineVariant}`, padding: '14px 16px', borderRadius: 8, fontSize: 14, color: C.onSurface, fontWeight: 500, outline: 'none', boxSizing: 'border-box' }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input
+              type="date"
+              value={draft.date}
+              onChange={(e) => update({ date: e.target.value })}
+              style={{ width: '100%', background: C.surfaceContainerLowest, border: `1px solid ${C.outlineVariant}`, padding: '14px 16px', borderRadius: 8, fontSize: 14, color: C.onSurface, fontWeight: 500, outline: 'none', boxSizing: 'border-box' }}
+            />
+            
+          </div>
         </div>
       </div>
 

@@ -45,6 +45,21 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+export function InfoBanner({ message }: { message: string }) {
+  return (
+    <div style={{ padding: '12px 16px', background: '#E8F2FE', border: '1px solid #B3D9F2', borderRadius: 8, fontSize: 13, color: '#185ABC', fontWeight: 500, marginBottom: 20 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+        {message}
+      </span>
+    </div>
+  )
+}
+
 export function Toggle({ value, onChange, label, sublabel }: { value: boolean; onChange: (v: boolean) => void; label?: string; sublabel?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

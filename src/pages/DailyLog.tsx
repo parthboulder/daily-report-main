@@ -32,10 +32,10 @@ const C = {
 
 const TODAY = new Date().toISOString().split('T')[0]
 
-function ProjectBadge({ code }: { code: string }) {
-  const colors = PROJECT_COLORS[code] || DEFAULT_PROJECT_COLOR
+function ProjectBadge({ id, code }: { id: number; code?: string }) {
+  const colors = code ? (PROJECT_COLORS[code] || DEFAULT_PROJECT_COLOR) : DEFAULT_PROJECT_COLOR
   return (
-    <span style={{ padding: '2px 8px', background: colors.bg, color: colors.text, fontSize: 10, fontWeight: 700, borderRadius: 4 }}>{code}</span>
+    <span style={{ padding: '4px 10px', background: colors.bg, color: colors.text, fontSize: 11, fontWeight: 700, borderRadius: 4 }}>#{id}</span>
   )
 }
 
@@ -43,7 +43,7 @@ export default function DailyLog() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const [selectedDate, setSelectedDate] = useState(TODAY)
-  const [projectFilter, setProjectFilter] = useState<string | null>(null)
+  const [projectFilter, setProjectFilter] = useState<number | null>(null)
   const [allProjects, setAllProjects] = useState<FieldProject[]>([])
   const [reports, setReports] = useState<DSRRow[]>([])
   const [manpower, setManpower] = useState<ManpowerRow[]>([])
@@ -76,8 +76,8 @@ export default function DailyLog() {
   useEffect(() => { load() }, [load])
 
   // Derived data
-  const submittedCodes = new Set(reports.flatMap((r) => r.projects || []))
-  const missingSites = projects.filter((p) => !submittedCodes.has(p.code))
+  const submittedIds = new Set(reports.map((r) => r.project_id).filter(Boolean))
+  const missingSites = projects.filter((p) => !submittedIds.has(p.id))
   const totalHeadcount = manpower.reduce((s, m) => s + (m.people || 0), 0)
   const shortages = manpower.filter((m) => m.sufficient_amt_of_manpower === 'No')
   const failedInspections = inspections.filter((i) => i.result === 'Fail')
@@ -127,10 +127,10 @@ export default function DailyLog() {
         <div className="flex items-center gap-1 flex-wrap" style={{ marginBottom: 32 }}>
           <button onClick={() => setProjectFilter(null)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: !projectFilter ? C.primary : C.surfaceContainerLow, color: !projectFilter ? C.onPrimary : C.onSurfaceVariant, transition: 'all 150ms' }}>All Sites</button>
           {projects.map((p) => {
-            const active = projectFilter === p.code
+            const active = projectFilter === p.id
             return (
-              <button key={p.code} onClick={() => setProjectFilter(active ? null : p.code)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: active ? C.primary : C.surfaceContainerLow, color: active ? C.onPrimary : C.onSurfaceVariant, transition: 'all 150ms' }}>
-                {p.code}
+              <button key={p.id} onClick={() => setProjectFilter(active ? null : p.id)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: active ? C.primary : C.surfaceContainerLow, color: active ? C.onPrimary : C.onSurfaceVariant, transition: 'all 150ms' }}>
+                {p.name}
               </button>
             )
           })}
@@ -169,7 +169,7 @@ export default function DailyLog() {
                   {missingSites.map((p) => (
                     <div key={`miss-${p.code}`} style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke={C.tertiary} strokeWidth={2}><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" /></svg>
-                      <ProjectBadge code={p.code} />
+                      <ProjectBadge id={p.id} code={p.code} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.tertiary }}>Report not submitted</span>
                       <span style={{ fontSize: 12, color: C.onSurfaceVariant, marginLeft: 'auto' }}>{p.name}</span>
                     </div>
@@ -177,7 +177,7 @@ export default function DailyLog() {
                   {shortages.map((m) => (
                     <div key={`short-${m.id}`} style={{ background: '#fef9ee', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#b45309" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      {m.projects?.[0] && <ProjectBadge code={m.projects[0]} />}
+                      {m.project_id && <ProjectBadge id={m.project_id} />}
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#b45309' }}>Manpower shortage — {m.name}: {m.people} workers</span>
                       {m.notes && <span style={{ fontSize: 12, color: C.onSurfaceVariant, marginLeft: 'auto' }}>{m.notes}</span>}
                     </div>
@@ -185,7 +185,7 @@ export default function DailyLog() {
                   {failedInspections.map((i) => (
                     <div key={`insp-${i.id}`} style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke={C.tertiary} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                      {i.projects?.[0] && <ProjectBadge code={i.projects[0]} />}
+                      {i.project_id && <ProjectBadge id={i.project_id} />}
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.tertiary }}>Inspection FAILED — {i.name}</span>
                       {i.details && <span style={{ fontSize: 12, color: C.onSurfaceVariant, marginLeft: 'auto' }}>{i.details}</span>}
                     </div>
@@ -193,14 +193,14 @@ export default function DailyLog() {
                   {damagedDeliveries.map((d) => (
                     <div key={`dmg-${d.id}`} style={{ background: '#fef9ee', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#b45309" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-                      {d.projects?.[0] && <ProjectBadge code={d.projects[0]} />}
+                      {d.project_id && <ProjectBadge id={d.project_id} />}
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#b45309' }}>Delivery damage — {d.name}</span>
                     </div>
                   ))}
                   {delays.map((d) => (
                     <div key={`dly-${d.id}`} style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke={C.tertiary} strokeWidth={2}><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 6v6l4 2" /></svg>
-                      {d.projects?.[0] && <ProjectBadge code={d.projects[0]} />}
+                      {d.project_id && <ProjectBadge id={d.project_id} />}
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.tertiary }}>[{d.cause_category}] {d.delay}{d.days_impacted ? ` — ${d.days_impacted}d impact` : ''}</span>
                     </div>
                   ))}
@@ -251,10 +251,9 @@ export default function DailyLog() {
                 ) : (
                   <div className="flex flex-col gap-3">
                     {reports.map((r) => {
-                      const code = r.projects?.[0]
                       return (
                         <div key={r.id} className="flex items-start gap-3" style={{ padding: '10px 14px', background: C.surfaceContainerLow, borderRadius: 8 }}>
-                          {code && <ProjectBadge code={code} />}
+                          {r.project_id && <ProjectBadge id={r.project_id} />}
                           <span style={{ fontSize: 13, color: C.onSurface, flex: 1 }}>{r.weather || 'No weather recorded'}</span>
                         </div>
                       )
@@ -280,10 +279,9 @@ export default function DailyLog() {
                     ) : (
                       <div className="flex flex-col gap-3">
                         {reports.filter((r) => r[field]).map((r) => {
-                          const code = r.projects?.[0]
                           return (
                             <div key={r.id} style={{ borderLeft: `3px solid ${color}`, paddingLeft: 12 }}>
-                              <div style={{ marginBottom: 4 }}>{code && <ProjectBadge code={code} />}</div>
+                              <div style={{ marginBottom: 4 }}>{r.project_id && <ProjectBadge id={r.project_id} />}</div>
                               <p style={{ fontSize: 13, color: C.onSurface, margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{r[field]}</p>
                             </div>
                           )
@@ -309,8 +307,7 @@ export default function DailyLog() {
 
                   <div className="flex flex-col gap-4">
                     {reports.map((r) => {
-                      const code = r.projects?.[0]
-                      const proj = code ? projects.find((p) => p.code === code) : null
+                      const proj = r.project_id ? projects.find((p) => p.id === r.project_id) : null
                       const time = r.report_sent_at
                         ? new Date(r.report_sent_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
                         : '—'
@@ -329,8 +326,8 @@ export default function DailyLog() {
                           <div className="flex items-center justify-between flex-wrap gap-2" style={{ marginBottom: 8 }}>
                             <div className="flex items-center gap-3">
                               <span style={{ fontSize: 12, fontWeight: 700, color: C.onSurfaceVariant, fontFamily: 'monospace' }}>{time}</span>
-                              {code && <ProjectBadge code={code} />}
-                              <span style={{ fontSize: 14, fontWeight: 700, color: C.onSurface }}>{proj?.name || code}</span>
+                              {r.project_id && <ProjectBadge id={r.project_id} />}
+                              <span style={{ fontSize: 14, fontWeight: 700, color: C.onSurface }}>{proj?.name}</span>
                             </div>
                             <div className="flex items-center gap-3">
                               {proj?.superintendent && <span style={{ fontSize: 12, color: C.onSurfaceVariant }}>{proj.superintendent}</span>}

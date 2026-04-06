@@ -42,6 +42,14 @@ export interface IssueDraft {
   trade: string
 }
 
+export interface DelayDraft {
+  activity: string
+  delay_days: number
+  reason: string
+  responsibility: string
+  mitigation: string
+}
+
 export interface InspectionDraftItem {
   type: string
   result: InspectionResultDraft
@@ -57,8 +65,8 @@ export interface PhotoDraft {
 
 export interface DSRDraft {
   step: number
-  project_id: string
-  project_code: string
+  project_id: number
+  project_name: string
   date: string
   weather_conditions: WeatherCondition | ''
   weather_temp: number | ''
@@ -77,6 +85,8 @@ export interface DSRDraft {
   equipment_attachments: AttachmentDraft[]
   has_issues: boolean
   issues: IssueDraft[]
+  has_delays: boolean
+  delays: DelayDraft[]
   has_inspections: boolean
   inspections: InspectionDraftItem[]
   photos: PhotoDraft[]
@@ -85,8 +95,8 @@ export interface DSRDraft {
 export function emptyDraft(today: string): DSRDraft {
   return {
     step: 0,
-    project_id: '',
-    project_code: '',
+    project_id: 0,
+    project_name: '',
     date: today,
     weather_conditions: '',
     weather_temp: '',
@@ -105,6 +115,8 @@ export function emptyDraft(today: string): DSRDraft {
     equipment_attachments: [],
     has_issues: false,
     issues: [],
+    has_delays: false,
+    delays: [],
     has_inspections: false,
     inspections: [],
     photos: [],
@@ -135,6 +147,7 @@ export function loadDraft(): DSRDraft | null {
     const parsed = JSON.parse(raw)
     // Migrate older drafts missing new fields
     if (!parsed.equipment_attachments) parsed.equipment_attachments = []
+    if (!parsed.delays) parsed.delays = []
     if (parsed.deliveries) {
       parsed.deliveries = parsed.deliveries.map((d: any) => ({
         ...d,
@@ -221,13 +234,14 @@ export async function fetchProjects(): Promise<FieldProject[]> {
       address: p.address,
     }))
   }
+  // Fallback projects with full names
   return [
-    { id: 1, name: 'TownePlace Suites – Jackson', code: 'TPSJ' },
-    { id: 2, name: 'Staybridge Suites – Jackson', code: 'SYBJ' },
-    { id: 3, name: 'Candlewood Suites – Jackson', code: 'CWSJ' },
-    { id: 4, name: 'Holiday Inn Express – Stephenville', code: 'HIS' },
-    { id: 5, name: 'Hampton Inn – Baton Rouge', code: 'HIBR' },
-    { id: 6, name: 'Homewood Suites – Gonzales', code: 'HWSG' },
+    { id: 1, name: 'TownePlace Suites – Jackson', code: 'TPSJ', superintendent: undefined, address: undefined },
+    { id: 2, name: 'Staybridge Suites – Jackson', code: 'SYBJ', superintendent: undefined, address: undefined },
+    { id: 3, name: 'Candlewood Suites – Jackson', code: 'CWSJ', superintendent: undefined, address: undefined },
+    { id: 4, name: 'Holiday Inn Express – Stephenville', code: 'HIS', superintendent: undefined, address: undefined },
+    { id: 5, name: 'Hampton Inn – Baton Rouge', code: 'HIBR', superintendent: undefined, address: undefined },
+    { id: 6, name: 'Homewood Suites – Gonzales', code: 'HWSG', superintendent: undefined, address: undefined },
   ]
 }
 
@@ -305,15 +319,32 @@ function buildDeliveriesText(entries: DeliveryDraft[]): string {
 function buildIssuesText(entries: IssueDraft[]): string {
   return entries
     .map((issue) => {
-      let line = `[${issue.category}] ${issue.description}`
-      if (issue.trade) line += ` (trade: ${issue.trade})`
-      if (issue.schedule_impact) line += ` — ${issue.schedule_impact_days}d schedule impact`
-      return line
+      const lines = [
+        `[${issue.category}] ${issue.description || 'No description'}`,
+      ]
+      if (issue.trade) lines.push(`Trade: ${issue.trade}`)
+      if (issue.schedule_impact) lines.push(`Schedule impact: ${issue.schedule_impact_days} day${issue.schedule_impact_days === 1 ? '' : 's'}`)
+      return lines.join('\n')
     })
-    .join('\n')
+    .join('\n\n')
 }
 
-// ===== Helper: build inspections text from draft entries =====
+// ===== Helper: build delays text from draft entries =====
+
+function buildDelaysText(entries: DelayDraft[]): string {
+  return entries
+    .map((delay) => {
+      const lines = [
+        `Delay - ${delay.activity || 'No activity provided'}`,
+        `  Duration: ${delay.delay_days ?? 0} day${delay.delay_days === 1 ? '' : 's'}`,
+        `  Reason: ${delay.reason || 'N/A'}`,
+        `  Responsibility: ${delay.responsibility || 'N/A'}`,
+        `  Mitigation: ${delay.mitigation || 'N/A'}`,
+      ]
+      return lines.join('\n')
+    })
+    .join('\n\n')
+}
 
 function buildInspectionsText(entries: InspectionDraftItem[]): string {
   return entries
@@ -358,7 +389,7 @@ export async function submitDSR(
     const { data: reportData, error: reportError } = await supabase
       .from('daily_site_report')
       .insert({
-        projects: draft.project_code ? [draft.project_code] : [],
+        project_id: draft.project_id || null,
         date: draft.date,
         submitted_by: userId ? [userId] : [],
         weather: weatherText || null,
@@ -369,9 +400,12 @@ export async function submitDSR(
         deliveries: draft.has_deliveries && draft.deliveries.length > 0
           ? buildDeliveriesText(draft.deliveries)
           : null,
-        issues_delays: draft.has_issues && draft.issues.length > 0
-          ? buildIssuesText(draft.issues)
-          : null,
+        issues_delays: (() => {
+          const issuesText = draft.has_issues && draft.issues.length > 0 ? buildIssuesText(draft.issues) : ''
+          const delaysText = draft.has_delays && draft.delays.length > 0 ? buildDelaysText(draft.delays) : ''
+          const combined = [issuesText, delaysText].filter(Boolean).join('\n\n')
+          return combined || null
+        })(),
         inspection_today_upcoming_with_status: draft.has_inspections && draft.inspections.length > 0
           ? buildInspectionsText(draft.inspections)
           : null,
@@ -394,7 +428,7 @@ export async function submitDSR(
         draft.photos.map(async (p) => {
           try {
             const url = await uploadPhoto({
-              projectCode: draft.project_code,
+              projectCode: draft.project_name,
               date: draft.date,
               reportId,
               photoId: p.id,
@@ -424,7 +458,7 @@ export async function submitDSR(
         draft.equipment_attachments.map(async (att) => {
           try {
             const url = await uploadAttachment({
-              projectCode: draft.project_code,
+              projectCode: draft.project_name,
               date: draft.date,
               reportId,
               attachmentId: att.id,
@@ -454,17 +488,29 @@ export async function submitDSR(
 
     // ── Insert manpower rows into separate manpower table ──
     if (draft.manpower.length > 0) {
-      await supabase.from('manpower').insert(
-        draft.manpower.map((m) => ({
-          name: m.trade,
-          date: draft.date,
-          people: m.headcount,
-          sufficient_amt_of_manpower: m.is_sufficient ? 'Yes' : 'No',
-          notes: m.notes || null,
-          projects: draft.project_code ? [draft.project_code] : [],
-          daily_site_report: String(reportId),
-        }))
-      )
+      // Aggregate manpower by trade to avoid duplicates
+      const manpowerMap = draft.manpower.reduce((acc, m) => {
+        const trade = m.trade.trim()
+        if (!acc[trade]) {
+          acc[trade] = { headcount: 0, is_sufficient: true, notes: [] }
+        }
+        acc[trade].headcount += m.headcount
+        acc[trade].is_sufficient = acc[trade].is_sufficient && m.is_sufficient
+        if (m.notes) acc[trade].notes.push(m.notes)
+        return acc
+      }, {} as Record<string, { headcount: number; is_sufficient: boolean; notes: string[] }>)
+
+      const aggregatedManpower = Object.entries(manpowerMap).map(([trade, data]) => ({
+        name: trade,
+        date: draft.date,
+        people: data.headcount,
+        sufficient_amt_of_manpower: data.is_sufficient ? 'Yes' : 'No',
+        notes: data.notes.join('; ') || null,
+        project_id: draft.project_id || null,
+        daily_site_report: String(reportId),
+      }))
+
+      await supabase.from('manpower').insert(aggregatedManpower)
     }
 
     // ── Insert delivery rows ──
@@ -474,7 +520,7 @@ export async function submitDSR(
         .insert(
           draft.deliveries.map((d) => ({
             name: `${d.vendor} — ${d.description}`,
-            projects: draft.project_code ? [draft.project_code] : [],
+            project_id: draft.project_id || null,
             on_site_receiver: d.received_by || null,
             missing_items_damages_everything_received: d.has_damages
               ? `Damages: ${d.damage_notes}`
@@ -497,7 +543,7 @@ export async function submitDSR(
               del.attachments.map(async (att) => {
                 try {
                   const url = await uploadAttachment({
-                    projectCode: draft.project_code,
+                    projectCode: draft.project_name,
                     date: draft.date,
                     reportId,
                     attachmentId: att.id,
@@ -530,7 +576,7 @@ export async function submitDSR(
           cause_category: issue.category,
           days_impacted: issue.schedule_impact ? issue.schedule_impact_days : 0,
           trade: issue.trade ? [issue.trade] : [],
-          projects: draft.project_code ? [draft.project_code] : [],
+          project_id: draft.project_id || null,
           status: 'Active',
           daily_site_report: String(reportId),
         }))
@@ -542,7 +588,7 @@ export async function submitDSR(
       await supabase.from('actual_inspections').insert(
         draft.inspections.map((insp) => ({
           name: insp.type,
-          projects: draft.project_code ? [draft.project_code] : [],
+          project_id: draft.project_id || null,
           result: insp.result === 'PASS' ? 'Pass' : insp.result === 'FAIL' ? 'Fail' : 'Partial Pass',
           details: insp.notes || null,
           actual_date: draft.date,
@@ -555,16 +601,16 @@ export async function submitDSR(
     try {
       for (const m of draft.manpower.filter((e) => !e.is_sufficient)) {
         await createTodo({
-          name: `Manpower shortage — ${m.trade} on ${draft.project_code} (${draft.date}): ${m.notes || 'Check staffing levels'}`,
-          project_code: draft.project_code,
+          name: `Manpower shortage — ${m.trade} on ${draft.project_name} (${draft.date}): ${m.notes || 'Check staffing levels'}`,
+          project_code: draft.project_name,
           urgent: true,
         })
       }
       if (draft.has_inspections) {
         for (const insp of draft.inspections.filter((i) => i.result === 'FAIL')) {
           await createTodo({
-            name: `Inspection FAILED — ${insp.type} on ${draft.project_code}: ${insp.notes || 'Corrective action required'}`,
-            project_code: draft.project_code,
+            name: `Inspection FAILED — ${insp.type} on ${draft.project_name}: ${insp.notes || 'Corrective action required'}`,
+            project_code: draft.project_name,
             urgent: true,
           })
         }
@@ -574,7 +620,8 @@ export async function submitDSR(
     // ── Fire-and-forget: email notification (when Edge Function is deployed) ──
     invokeEdgeFunction('send-notification', {
       reportId,
-      projectCode: draft.project_code,
+      projectId: draft.project_id,
+      projectName: draft.project_name,
       date: draft.date,
       superintendentId: userId,
       summary: {
@@ -597,7 +644,7 @@ export async function submitDSR(
 
 export interface DSRRow {
   id: number
-  projects: string[] | null
+  project_id: number | null
   date: string | null
   submitted_by: string[] | null
   weather: string | null
@@ -616,13 +663,15 @@ export interface DSRRow {
   created_at: string
 }
 
-export async function fetchDSRList(params?: { projectCode?: string; limit?: number }): Promise<DSRRow[]> {
+export async function fetchDSRList(params?: { projectId?: number; projectCode?: string; limit?: number }): Promise<DSRRow[]> {
   let query = supabase
     .from('daily_site_report')
     .select('*')
     .order('date', { ascending: false })
     .limit(params?.limit || 200)
-  if (params?.projectCode) query = query.contains('projects', [params.projectCode])
+  // Support both new project_id and legacy projects code filtering
+  if (params?.projectId) query = query.eq('project_id', params.projectId)
+  else if (params?.projectCode) query = query.contains('projects', [params.projectCode])
   const { data } = await query
   return (data || []) as DSRRow[]
 }
@@ -641,12 +690,12 @@ export interface ManpowerRow {
   date: string | null
   name: string | null
   people: number | null
-  projects: string[] | null
+  project_id: number | null
   sufficient_amt_of_manpower: string | null
   notes: string | null
 }
 
-export async function fetchManpower(params?: { projectCode?: string; days?: number }): Promise<ManpowerRow[]> {
+export async function fetchManpower(params?: { projectId?: number; projectCode?: string; days?: number }): Promise<ManpowerRow[]> {
   const daysAgo = new Date()
   daysAgo.setDate(daysAgo.getDate() - (params?.days || 14))
   let query = supabase
@@ -655,33 +704,42 @@ export async function fetchManpower(params?: { projectCode?: string; days?: numb
     .gte('date', daysAgo.toISOString().split('T')[0])
     .order('date', { ascending: false })
     .limit(1000)
-  if (params?.projectCode) query = query.contains('projects', [params.projectCode])
+  // Support both new project_id and legacy projects code filtering
+  if (params?.projectId) query = query.eq('project_id', params.projectId)
+  else if (params?.projectCode) query = query.contains('projects', [params.projectCode])
   const { data } = await query
   return (data || []) as ManpowerRow[]
 }
 
 // ===== Date-scoped DSR fetch =====
 
-export async function fetchDSRsForDate(date: string, projectCode?: string): Promise<DSRRow[]> {
+export async function fetchDSRsForDate(date: string, projectId?: number, projectCode?: string): Promise<DSRRow[]> {
   let query = supabase
     .from('daily_site_report')
     .select('*')
     .eq('date', date)
     .order('report_sent_at', { ascending: false })
-  if (projectCode) query = query.contains('projects', [projectCode])
+  // Support both new project_id and legacy projects code filtering
+  if (projectId) query = query.eq('project_id', projectId)
+  else if (projectCode) query = query.contains('projects', [projectCode])
   const { data } = await query
   return (data || []) as DSRRow[]
 }
 
 // ===== Date-scoped Manpower fetch =====
 
-export async function fetchManpowerForDate(date: string, projectCode?: string): Promise<ManpowerRow[]> {
+export async function fetchManpowerForDate(date: string, projectId?: number, dailySiteReportId?: number): Promise<ManpowerRow[]> {
   let query = supabase
     .from('manpower')
     .select('*')
     .eq('date', date)
     .order('name')
-  if (projectCode) query = query.contains('projects', [projectCode])
+
+  if (projectId) query = query.eq('project_id', projectId)
+  if (dailySiteReportId !== undefined && dailySiteReportId !== null) {
+    query = query.eq('daily_site_report', String(dailySiteReportId))
+  }
+
   const { data } = await query
   return (data || []) as ManpowerRow[]
 }
@@ -691,7 +749,7 @@ export async function fetchManpowerForDate(date: string, projectCode?: string): 
 export interface DeliveryRow {
   id: number
   name: string | null
-  projects: string[] | null
+  project_id: number | null
   delivery_date: string | null
   on_site_receiver: string | null
   missing_items_damages_everything_received: string | null
@@ -699,12 +757,14 @@ export interface DeliveryRow {
   daily_site_report: string | null
 }
 
-export async function fetchDeliveriesForDate(date: string, projectCode?: string): Promise<DeliveryRow[]> {
+export async function fetchDeliveriesForDate(date: string, projectId?: number, projectCode?: string): Promise<DeliveryRow[]> {
   let query = supabase
     .from('deliveries')
     .select('*')
     .eq('delivery_date', date)
-  if (projectCode) query = query.contains('projects', [projectCode])
+  // Support both new project_id and legacy projects code filtering
+  if (projectId) query = query.eq('project_id', projectId)
+  else if (projectCode) query = query.contains('projects', [projectCode])
   const { data } = await query
   return (data || []) as DeliveryRow[]
 }
@@ -717,14 +777,14 @@ export interface DelayRow {
   cause_category: string | null
   days_impacted: number | null
   trade: string[] | null
-  projects: string[] | null
+  project_id: number | null
   status: string | null
   daily_site_report: string | null
 }
 
-export async function fetchDelaysForDate(date: string, projectCode?: string): Promise<DelayRow[]> {
+export async function fetchDelaysForDate(date: string, projectId?: number, projectCode?: string): Promise<DelayRow[]> {
   // Delays link to DSRs via daily_site_report (string ID). Fetch DSR IDs for the date, then query delays.
-  const dsrs = await fetchDSRsForDate(date, projectCode)
+  const dsrs = await fetchDSRsForDate(date, projectId, projectCode)
   const dsrIds = dsrs.map((r) => String(r.id))
   if (dsrIds.length === 0) return []
   const { data } = await supabase
@@ -739,19 +799,21 @@ export async function fetchDelaysForDate(date: string, projectCode?: string): Pr
 export interface InspectionRow {
   id: number
   name: string | null
-  projects: string[] | null
+  project_id: number | null
   result: string | null
   details: string | null
   actual_date: string | null
   status: string | null
 }
 
-export async function fetchInspectionsForDate(date: string, projectCode?: string): Promise<InspectionRow[]> {
+export async function fetchInspectionsForDate(date: string, projectId?: number, projectCode?: string): Promise<InspectionRow[]> {
   let query = supabase
     .from('actual_inspections')
     .select('*')
     .eq('actual_date', date)
-  if (projectCode) query = query.contains('projects', [projectCode])
+  // Support both new project_id and legacy projects code filtering
+  if (projectId) query = query.eq('project_id', projectId)
+  else if (projectCode) query = query.contains('projects', [projectCode])
   const { data } = await query
   return (data || []) as InspectionRow[]
 }

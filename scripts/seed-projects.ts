@@ -13,6 +13,7 @@ if (!SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Project seed data with full names and codes
 const PROJECTS = [
   { name: 'TownePlace Suites – Jackson', code: 'TPSJ' },
   { name: 'Staybridge Suites – Jackson', code: 'SYBJ' },

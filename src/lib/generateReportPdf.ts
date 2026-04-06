@@ -10,11 +10,13 @@ export interface PdfReportData {
   superintendent?: string
   weather?: string
   manpower: { trade: string; headcount: number; is_sufficient: boolean; notes?: string }[]
+  totalManpower: number
   work_completed: string
   work_in_progress: string
   work_planned_tomorrow: string
   deliveries: string[]
   issues: { category: string; description: string; schedule_impact: boolean; schedule_impact_days: number }[]
+  delays: { activity: string; delay_days: number; reason: string; responsibility: string; mitigation: string }[]
   inspections: { type: string; result: string; notes: string }[]
   notes: string
   photos: { dataUrl?: string; url?: string; caption?: string }[]
@@ -45,9 +47,11 @@ export function draftToReportData(
   if (draft.rain_inches !== '') weather += `, Rain: ${draft.rain_inches}"`
   if (draft.wind_speed_mph !== '') weather += `, Wind: ${draft.wind_speed_mph} mph`
 
+  const totalManpower = draft.manpower.reduce((sum, m) => sum + m.headcount, 0)
+
   return {
     projectName,
-    projectCode: draft.project_code,
+    projectCode: `#${draft.project_id}`,
     date: draft.date,
     superintendent,
     weather,
@@ -57,6 +61,7 @@ export function draftToReportData(
       is_sufficient: m.is_sufficient,
       notes: m.notes,
     })),
+    totalManpower,
     work_completed: draft.work_completed,
     work_in_progress: draft.work_in_progress,
     work_planned_tomorrow: draft.work_planned_tomorrow,
@@ -66,6 +71,13 @@ export function draftToReportData(
       description: i.description,
       schedule_impact: i.schedule_impact,
       schedule_impact_days: i.schedule_impact_days,
+    })) : [],
+    delays: draft.has_delays ? draft.delays.map(d => ({
+      activity: d.activity,
+      delay_days: d.delay_days,
+      reason: d.reason,
+      responsibility: d.responsibility,
+      mitigation: d.mitigation,
     })) : [],
     inspections: draft.has_inspections ? draft.inspections.map(i => ({
       type: i.type,
@@ -169,6 +181,26 @@ export function generateReportPdf(data: PdfReportData) {
       <div class="section">
         <h2>Issues & Delays</h2>
         ${issueItems}
+      </div>`
+  }
+
+  // Delays
+  let delaysHtml = ''
+  if (data.delays.length > 0) {
+    const delayItems = data.delays.map(d => {
+      return `
+        <div style="margin-bottom:12px;padding:8px;border-left:3px solid #E8783A;background:#fef7f2;border-radius:0 4px 4px 0">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#2e3430">${escapeHtml(d.activity)}</p>
+          <p style="margin:0 0 2px;font-size:13px;color:#5a615c"><strong>Delay:</strong> ${d.delay_days} day${d.delay_days !== 1 ? 's' : ''}</p>
+          <p style="margin:0 0 2px;font-size:13px;color:#5a615c"><strong>Reason:</strong> ${escapeHtml(d.reason)}</p>
+          <p style="margin:0 0 2px;font-size:13px;color:#5a615c"><strong>Responsibility:</strong> ${escapeHtml(d.responsibility)}</p>
+          <p style="margin:0 0 2px;font-size:13px;color:#5a615c"><strong>Mitigation:</strong> ${escapeHtml(d.mitigation)}</p>
+        </div>`
+    }).join('')
+    delaysHtml = `
+      <div class="section">
+        <h2>Delays</h2>
+        ${delayItems}
       </div>`
   }
 
@@ -397,6 +429,7 @@ export function generateReportPdf(data: PdfReportData) {
   ${workHtml}
   ${deliveriesHtml}
   ${issuesHtml}
+  ${delaysHtml}
   ${inspectionsHtml}
   ${notesHtml}
   ${photosHtml}
