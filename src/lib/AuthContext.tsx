@@ -318,7 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ===== Update Password (self-service via user_passwords table) =====
   async function updatePassword(newPassword: string) {
     try {
-      const session = (await supabase.auth.getSession()).data.session
+      const { data: { session } } = await supabase.auth.refreshSession()
       if (!session?.access_token) return { error: 'Not authenticated' }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ===== Admin: Reset another user's password via Edge Function =====
   async function adminResetPassword(targetUserId: string, newPassword: string): Promise<{ error: string | null }> {
     try {
-      const session = (await supabase.auth.getSession()).data.session
+      const { data: { session } } = await supabase.auth.refreshSession()
       if (!session?.access_token) return { error: 'Not authenticated' }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -386,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ===== Admin: Create a new user (via Edge Function) =====
   async function adminCreateUser(email: string, password: string, fullName: string, role: string): Promise<{ error: string | null }> {
     try {
-      const session = (await supabase.auth.getSession()).data.session
+      const { data: { session } } = await supabase.auth.refreshSession()
       if (!session?.access_token) return { error: 'Not authenticated' }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL

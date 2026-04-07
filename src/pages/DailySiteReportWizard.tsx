@@ -23,7 +23,7 @@ import StepPhotos from './wizard-steps/StepPhotos'
 import StepReview from './wizard-steps/StepReview'
 
 const STEPS = ['Weather', 'Manpower', 'Summary', 'Deliveries', 'Issues', 'Delays', 'Photos', 'Submit']
-const TODAY = new Date().toISOString().split('T')[0]
+const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 const STEP_ICONS: Record<string, React.ReactNode> = {
   Weather: (

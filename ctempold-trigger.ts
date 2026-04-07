@@ -8,7 +8,6 @@ function getEnv() {
   return {
     SUPABASE_URL: process.env.SUPABASE_URL || "",
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "",
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     GOTENBERG_URL: process.env.GOTENBERG_URL || "",
     GOTENBERG_AUTH: process.env.GOTENBERG_AUTH || "",
     COMPRESS_URL: process.env.COMPRESS_URL || "",
@@ -22,7 +21,7 @@ function getEnv() {
 
 function getSupabase() {
   const env = getEnv();
-  return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY);
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
 }
 
 function getAnthropic() {
@@ -88,18 +87,6 @@ interface NormalizedReport {
 
 async function getGraphAccessToken(): Promise<string> {
   const env = getEnv();
-
-  // Validate required Azure credentials
-  if (!env.MS_TENANT_ID) {
-    throw new Error("MS_TENANT_ID (or AZURE_TENANT_ID) not configured");
-  }
-  if (!env.MS_CLIENT_ID) {
-    throw new Error("MS_CLIENT_ID (or AZURE_CLIENT_ID) not configured");
-  }
-  if (!env.MS_CLIENT_SECRET) {
-    throw new Error("MS_CLIENT_SECRET (or AZURE_CLIENT_SECRET) not configured");
-  }
-
   const tokenUrl = `https://login.microsoftonline.com/${env.MS_TENANT_ID}/oauth2/v2.0/token`;
   const params = new URLSearchParams({
     client_id: env.MS_CLIENT_ID,
@@ -107,30 +94,10 @@ async function getGraphAccessToken(): Promise<string> {
     scope: "https://graph.microsoft.com/.default",
     grant_type: "client_credentials",
   });
-
-  logger.log("[TOKEN] Requesting Graph access token", { tokenUrl, clientId: env.MS_CLIENT_ID });
-
-  try {
-    const res = await axios.post(tokenUrl, params.toString(), {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-
-    if (!res.data.access_token) {
-      logger.error("[TOKEN] No access_token in response", { data: res.data });
-      throw new Error("No access_token returned from Azure");
-    }
-
-    logger.log("[TOKEN] Successfully obtained Graph access token");
-    return res.data.access_token;
-  } catch (error: any) {
-    logger.error("[TOKEN] Failed to get Graph access token", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-    });
-    throw new Error(`Failed to get Graph token: ${error.response?.data?.error_description || error.message}`);
-  }
+  const res = await axios.post(tokenUrl, params.toString(), {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+  return res.data.access_token;
 }
 
 async function sendEmailWithGraph(
@@ -142,8 +109,6 @@ async function sendEmailWithGraph(
   pdfBuffer: Buffer,
   pdfFilename: string
 ): Promise<void> {
-  logger.log("[EMAIL] Starting email send via Graph", { to, cc, subject, pdfFilename, bufferSize: pdfBuffer.length });
-
   const toRecipients = to.split(",").map(e => e.trim()).filter(Boolean).map(email => ({
     emailAddress: { address: email },
   }));
@@ -153,13 +118,6 @@ async function sendEmailWithGraph(
         emailAddress: { address: email },
       }))
     : [];
-
-  logger.log("[EMAIL] Recipients parsed", { toCount: toRecipients.length, ccCount: ccRecipients.length });
-
-  if (toRecipients.length === 0) {
-    logger.error("[EMAIL] No TO recipients after parsing", { to });
-    throw new Error("No TO recipients provided");
-  }
 
   const attachments = pdfBuffer.length > 0 && pdfFilename
     ? [
@@ -171,8 +129,6 @@ async function sendEmailWithGraph(
         },
       ]
     : [];
-
-  logger.log("[EMAIL] Attachments prepared", { count: attachments.length });
 
   const senderEmail = getEnv().MS_SENDER_EMAIL;
   const message: any = {
@@ -187,26 +143,11 @@ async function sendEmailWithGraph(
     saveToSentItems: "true",
   };
 
-  const graphUrl = `https://graph.microsoft.com/v1.0/users/${senderEmail}/sendMail`;
-  logger.log("[EMAIL] Sending via Graph API", { url: graphUrl, senderEmail });
-
-  try {
-    const response = await axios.post(
-      graphUrl,
-      message,
-      { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
-    );
-
-    logger.log("[EMAIL] SUCCESS: Email sent via Graph", { status: response.status });
-  } catch (error: any) {
-    logger.error("[EMAIL] FAILED: Graph API error", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-    });
-    throw new Error(`Failed to send email: ${error.response?.data?.error?.message || error.message}`);
-  }
+  await axios.post(
+    `https://graph.microsoft.com/v1.0/users/${senderEmail}/sendMail`,
+    message,
+    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+  );
 }
 
 function getYesterdayDate(): string {
@@ -361,79 +302,33 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
   const supabase = getSupabase();
   const anthropic = getAnthropic();
 
-  logger.log("[WORKFLOW] Raw options received", { options })
+  const emailTo = options.emailTo ? options.emailTo.trim() : ""
+  const emailCc = options.emailCc ? options.emailCc.trim() : ""
 
-  let finalEmailTo = ""
-  let finalEmailCc = ""
-
-  // Try JSON arrays first (sent by UI via toJson/ccJson)
-  try {
-    const jsonTo = options.emailToJson ? JSON.parse(options.emailToJson) : []
-    if (Array.isArray(jsonTo) && jsonTo.length > 0) {
-      finalEmailTo = jsonTo.map((e: string) => e.trim()).filter(Boolean).join(', ')
-      logger.log("[WORKFLOW] emailTo from JSON array", { jsonTo, finalEmailTo })
-    }
-  } catch (e) {
-    logger.error("[WORKFLOW] Failed to parse emailToJson", { emailToJson: options.emailToJson })
+  const jsonTo = options.emailToJson ? JSON.parse(options.emailToJson) : []
+  const jsonCc = options.emailCcJson ? JSON.parse(options.emailCcJson) : []
+  if (Array.isArray(jsonTo) && jsonTo.length > 0) {
+    logger.log("Overriding emailTo from JSON list", { jsonTo })
+  }
+  if (Array.isArray(jsonCc) && jsonCc.length > 0) {
+    logger.log("Overriding emailCc from JSON list", { jsonCc })
   }
 
-  try {
-    const jsonCc = options.emailCcJson ? JSON.parse(options.emailCcJson) : []
-    if (Array.isArray(jsonCc) && jsonCc.length > 0) {
-      finalEmailCc = jsonCc.map((e: string) => e.trim()).filter(Boolean).join(', ')
-      logger.log("[WORKFLOW] emailCc from JSON array", { jsonCc, finalEmailCc })
-    }
-  } catch (e) {
-    logger.error("[WORKFLOW] Failed to parse emailCcJson", { emailCcJson: options.emailCcJson })
-  }
+  const finalEmailTo = Array.isArray(jsonTo) && jsonTo.length > 0 ? jsonTo.join(', ') : emailTo
+  const finalEmailCc = Array.isArray(jsonCc) && jsonCc.length > 0 ? jsonCc.join(', ') : emailCc
 
-  // Fall back to plain string fields
-  if (!finalEmailTo && options.emailTo) {
-    finalEmailTo = options.emailTo.trim()
-    logger.log("[WORKFLOW] emailTo from plain string", { finalEmailTo })
-  }
-  if (!finalEmailCc && options.emailCc) {
-    finalEmailCc = options.emailCc.trim()
-    logger.log("[WORKFLOW] emailCc from plain string", { finalEmailCc })
-  }
-
-  // Final fallback to env/hardcoded defaults
-  if (!finalEmailTo) {
-    finalEmailTo = process.env.DAILY_REPORT_EMAIL_TO || "vraj@boulderconstruction.com,smit@boulderconstruction.com"
-    logger.log("[WORKFLOW] emailTo from env default", { finalEmailTo })
-  }
-  if (!finalEmailCc) {
-    finalEmailCc = process.env.DAILY_REPORT_EMAIL_CC || ""
-    logger.log("[WORKFLOW] emailCc from env default", { finalEmailCc })
-  }
-
-  logger.log("[WORKFLOW] Final email recipients", { finalEmailTo, finalEmailCc })
+  logger.log("[WORKFLOW] Email recipients", { finalEmailTo, finalEmailCc })
 
   // Step 1: Fetch records from Supabase
   const reportDate = getYesterdayDate();
-  logger.log(`Fetching records for date: ${reportDate}, skipMissing: ${options.skipMissing}`);
+  logger.log(`Fetching records for date: ${reportDate}`);
 
-  logger.log("[DB] Supabase config check", {
-    hasUrl: !!env.SUPABASE_URL,
-    hasServiceKey: !!env.SUPABASE_SERVICE_ROLE_KEY,
-    hasAnonKey: !!env.SUPABASE_ANON_KEY,
-    usingKey: env.SUPABASE_SERVICE_ROLE_KEY ? "service_role" : "anon",
-  });
-
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  logger.log(`[DB] Querying for date <= ${today}`);
-
-  // Fetch Submitted records where date <= today (catches today + any backlog)
-  // Also fetch generate_daily_report=true records
-  // Never re-send Sent or Failed
-  let query = supabase
+  const { data: records, error } = await supabase
     .from("daily_site_report")
     .select("*")
-    .not("projects", "is", null)
+    .or(`date.eq.${reportDate},generate_daily_report.eq.true`)
     .not("report_status", "in", '("Sent","Failed")')
-    .or(`and(report_status.eq.Submitted,date.lte.${today}),generate_daily_report.eq.true`);
-
-  const { data: records, error } = await query;
+    .not("projects", "is", null);
 
   if (error) {
     logger.error("Supabase fetch error:", { error });
@@ -495,13 +390,13 @@ async function runDailyReportWorkflow(options: RunWorkflowOptions = {}): Promise
     logger.log("No eligible records found for report generation");
 
     // Optional: send a notification email when no records are available
-    if (finalEmailTo.trim()) {
+    if (emailTo.trim()) {
       try {
         const accessToken = await getGraphAccessToken();
         await sendEmailWithGraph(
           accessToken,
-          finalEmailTo,
-          finalEmailCc,
+          emailTo,
+          emailCc,
           `Daily Report Run - No Records Found (${reportDate})`,
           `Hi Team,\n\nThe daily report workflow was run for ${reportDate}, but no eligible records were found.\n\nThis is an automated notification.\n`,
           Buffer.alloc(0),
@@ -726,8 +621,8 @@ export const scheduledDailyReport = schedules.task({
 export const manualDailyReport = task({
   id: "manual-daily-report",
   maxDuration: 3600,
-  run: async (payload: { triggeredBy?: string; emailTo?: string; emailCc?: string; emailToJson?: string; emailCcJson?: string; testMode?: boolean }) => {
-    logger.log("[MANUAL] Running manual daily report", { triggeredBy: payload.triggeredBy, emailTo: payload.emailTo, emailCc: payload.emailCc, emailToJson: payload.emailToJson, emailCcJson: payload.emailCcJson });
-    return await runDailyReportWorkflow({ emailTo: payload.emailTo, emailCc: payload.emailCc, emailToJson: payload.emailToJson, emailCcJson: payload.emailCcJson, skipMissing: true });
+  run: async (payload: { triggeredBy?: string; emailTo?: string; emailCc?: string }) => {
+    logger.log("[MANUAL] Running manual daily report", { triggeredBy: payload.triggeredBy, emailTo: payload.emailTo, emailCc: payload.emailCc });
+    return await runDailyReportWorkflow({ emailTo: payload.emailTo, emailCc: payload.emailCc, skipMissing: true });
   },
 });

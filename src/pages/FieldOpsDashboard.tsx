@@ -83,16 +83,16 @@ export default function FieldOpsDashboard() {
 
   const projectIds = projects.map((p) => p.id)
   const todayReports: Record<number, DSRRow | undefined> = {}
-  for (const id of projectIds) {
-    todayReports[id] = reports.find((r) => r.date === TODAY && r.project_id === id)
+  for (const p of projects) {
+    todayReports[p.id] = reports.find((r) => r.date === TODAY && r.projects && r.projects.includes(p.name))
   }
 
   const submittedToday = Object.values(todayReports).filter(Boolean).length
   const totalProjects = projectIds.length
 
   const weeklyData = last7Days.map((date) => {
-    const submitted = projectIds.filter((id) =>
-      reports.some((r) => r.date === date && r.project_id === id)
+    const submitted = projects.filter((p) =>
+      reports.some((r) => r.date === date && r.projects && r.projects.includes(p.name))
     ).length
     return { date, submitted, pct: totalProjects > 0 ? Math.round((submitted / totalProjects) * 100) : 0 }
   })

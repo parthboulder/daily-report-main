@@ -126,7 +126,7 @@ export default function AdminDashboard() {
   const loadSchedule = useCallback(async () => {
     setScheduleLoading(true)
     try {
-      const session = (await supabase.auth.getSession()).data.session
+      const { data: { session } } = await supabase.auth.refreshSession()
       if (!session?.access_token) { setScheduleLoading(false); return }
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trigger-daily-report`,
@@ -421,7 +421,7 @@ export default function AdminDashboard() {
 
   // --- Reports / Trigger handlers ---
   async function callEdgeFunction(body: any) {
-    const session = (await supabase.auth.getSession()).data.session
+    const { data: { session } } = await supabase.auth.refreshSession()
     if (!session?.access_token) throw new Error('Not authenticated')
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trigger-daily-report`,

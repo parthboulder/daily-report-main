@@ -390,6 +390,7 @@ export async function submitDSR(
       .from('daily_site_report')
       .insert({
         project_id: draft.project_id || null,
+        projects: draft.project_name ? [draft.project_name] : [],
         date: draft.date,
         submitted_by: userId ? [userId] : [],
         weather: weatherText || null,
@@ -428,7 +429,7 @@ export async function submitDSR(
         draft.photos.map(async (p) => {
           try {
             const url = await uploadPhoto({
-              projectCode: draft.project_name,
+              projectCode: `project-${draft.project_id}`,
               date: draft.date,
               reportId,
               photoId: p.id,
@@ -458,7 +459,7 @@ export async function submitDSR(
         draft.equipment_attachments.map(async (att) => {
           try {
             const url = await uploadAttachment({
-              projectCode: draft.project_name,
+              projectCode: `project-${draft.project_id}`,
               date: draft.date,
               reportId,
               attachmentId: att.id,
@@ -543,7 +544,7 @@ export async function submitDSR(
               del.attachments.map(async (att) => {
                 try {
                   const url = await uploadAttachment({
-                    projectCode: draft.project_name,
+                    projectCode: `project-${draft.project_id}`,
                     date: draft.date,
                     reportId,
                     attachmentId: att.id,

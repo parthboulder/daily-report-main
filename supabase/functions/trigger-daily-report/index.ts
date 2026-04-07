@@ -68,6 +68,7 @@ serve(async (req) => {
             emailCc: body.cc || '',
             emailToJson: body.toJson || '[]',
             emailCcJson: body.ccJson || '[]',
+            testMode: false,
           },
         }),
       })

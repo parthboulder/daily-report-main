@@ -57,12 +57,12 @@ export default function DailySiteReportView() {
     if (!id) return
     fetchDSRById(parseInt(id)).then((r) => {
       setReport(r)
-      if (r?.project_id) {
-        fetchManpowerForDate(r.date || '', r.project_id, r.id).then((rows) => {
+      if (r) {
+        fetchManpowerForDate(r.date || '', undefined, r.id).then((rows) => {
           setManpower(rows)
         })
-        fetchDelaysForDate(r.date || '', r.project_id).then((rows) => {
-          setDelays(rows)
+        supabase.from('delays').select('*').eq('daily_site_report', String(r.id)).then(({ data }) => {
+          setDelays((data || []) as DelayRow[])
         })
       }
       // Fetch superintendent name from user_profiles
@@ -195,8 +195,8 @@ export default function DailySiteReportView() {
       : []
 
     generateReportPdf({
-      projectName: 'Project #' + report.project_id,
-      projectCode: 'Project #' + report.project_id,
+      projectName: report.projects && report.projects.length > 0 ? report.projects[0] : 'Unknown Project',
+      projectCode: report.projects && report.projects.length > 0 ? report.projects[0] : 'Unknown',
       date: report.date || '',
       weather: report.weather || undefined,
       manpower: manpowerData,
@@ -233,7 +233,7 @@ export default function DailySiteReportView() {
     )
   }
 
-  const projectId = report.project_id || 0
+  const projectId = report.id
   const formattedDate = report.date
     ? new Date(report.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
